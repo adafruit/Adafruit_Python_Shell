@@ -136,6 +136,13 @@ class Shell:
         os.system("clear")
 
     @staticmethod
+    def reboot():
+        """
+        Reboot the system
+        """
+        os.system("reboot")
+
+    @staticmethod
     def is_root():
         """
         Return whether the current user is logged in as root or has super user access
@@ -158,6 +165,7 @@ class Shell:
         """
         if append:
             mode = "a"
+            content = "\n" + content
         else:
             mode = "w"
         service_file = open(path, mode)
