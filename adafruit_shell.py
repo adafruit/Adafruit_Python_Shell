@@ -143,6 +143,21 @@ class Shell:
         os.system("reboot")
 
     @staticmethod
+    def getcwd():
+        """
+        Get the Current Working Directory
+        """
+        return os.getcwd()
+
+    def chdir(self, directory):
+        """
+        Change directory
+        """
+        if directory[0] != "/" and directory[0] != ".":
+            directory = self.getcwd() + "/" + directory
+        return os.chdir(directory)
+
+    @staticmethod
     def is_root():
         """
         Return whether the current user is logged in as root or has super user access
