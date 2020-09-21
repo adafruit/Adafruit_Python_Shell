@@ -23,15 +23,17 @@ Implementation Notes
 # imports
 import sys
 import os
+import shutil
 import subprocess
 import platform
 from re import match, I
 from clint.textui import colored, prompt
+import adafruit_platformdetect
 
 __version__ = "0.0.0-auto.0"
 __repo__ = "https://github.com/adafruit/Adafruit_Python_Shell.git"
 
-
+# pylint: disable=too-many-public-methods
 class Shell:
     """
     Class to help with converting Shell scripts over to Python. Having all
@@ -50,7 +52,11 @@ class Shell:
 
         for index, selection in enumerate(selections):
             options.append(
-                {"selector": str(index + 1), "prompt": selection, "return": index + 1,}
+                {
+                    "selector": str(index + 1),
+                    "prompt": selection,
+                    "return": index + 1,
+                }
             )
         return prompt.options(message, options)
 
@@ -105,11 +111,20 @@ class Shell:
             print(message)
 
     @staticmethod
-    def prompt(message, default=None):
+    def print_colored(message, color):
+        """Print out a message in a specific color"""
+        colors = ("red", "green", "yellow", "blue", "black", "magenta", "cyan", "white")
+        if color in colors:
+            colorize = getattr(colored, color)
+            print(colorize(message))
+
+    def prompt(self, message, *, default=None, force_arg=None):
         """
         A Yes/No prompt that accepts optional defaults
         Returns True for Yes and False for No
         """
+        if force_arg is not None and self.argument_exists(force_arg):
+            return True
         if default is None:
             choicebox = "[y/n]"
         else:
@@ -158,11 +173,68 @@ class Shell:
         return os.chdir(directory)
 
     @staticmethod
+    def path(file_path):
+        """
+        Return the relative path. This works for paths starting with ~
+        """
+        return os.path.expanduser(file_path)
+
+    @staticmethod
+    def home_dir():
+        """
+        Return the User's home directory
+        """
+        return os.path.expanduser("~")
+
+    @staticmethod
     def is_root():
         """
         Return whether the current user is logged in as root or has super user access
         """
         return os.geteuid() == 0
+
+    @staticmethod
+    def script():
+        """
+        Return the name of the script that is running
+        """
+        return sys.argv[0]
+
+    def grep(self, search_term, location):
+        """
+        Run the grep command and return the result
+        """
+        location = self.path(location)
+        return self.run_command(
+            "grep {} {}".format(search_term, location), suppress_message=True
+        )
+
+    def exists(self, location):
+        """
+        Check if a path or file exists
+        """
+        location = self.path(location)
+        return os.path.exists(location)
+
+    def move(self, source, destination):
+        """
+        Move a file or directory from source to destination
+        """
+        source = self.path(source)
+        destination = self.path(destination)
+        if os.path.exists(source):
+            shutil.move(source, destination)
+
+    def remove(self, location):
+        """
+        Remove a file or directory if it exists
+        """
+        location = self.path(location)
+        if os.path.exists(location):
+            if os.path.isdir(location):
+                shutil.rmtree(location)
+            else:
+                os.remove(location)
 
     def require_root(self):
         """
@@ -170,11 +242,10 @@ class Shell:
         """
         if not self.is_root():
             print("Installer must be run as root.")
-            print("Try 'sudo python3 {}'".format(sys.argv[0]))
+            print("Try 'sudo python3 {}'".format(self.script()))
             sys.exit(1)
 
-    @staticmethod
-    def write_text_file(path, content, append=True):
+    def write_text_file(self, path, content, append=True):
         """
         Write the contents to a file at the specified path
         """
@@ -183,7 +254,7 @@ class Shell:
             content = "\n" + content
         else:
             mode = "w"
-        service_file = open(path, mode)
+        service_file = open(self.path(path), mode)
         service_file.write(content)
         service_file.close()
 
@@ -192,7 +263,115 @@ class Shell:
         """
         Check that we are running linux
         """
-        return platform.system() == "Linux"
+        return platform.system() == "Linux" or platform.system() == "Darwin"
+
+    @staticmethod
+    def is_armhf():
+        """
+        Check if Platform.machine() (same as uname -m) returns an ARM platform that
+        supports hardware floating point
+        """
+        return bool(match("armv.l", platform.machine()))
+
+    @staticmethod
+    def is_armv6():
+        """
+        Check if Platform.machine() returns ARM v6
+        """
+        return platform.machine() == "armv6l"
+
+    @staticmethod
+    def is_armv7():
+        """
+        Check if Platform.machine() returns ARM v7
+        """
+        return platform.machine() == "armv7l"
+
+    @staticmethod
+    def is_armv8():
+        """
+        Check if Platform.machine() returns ARM v8
+        """
+        return platform.machine() == "armv8l"
+
+    @staticmethod
+    def get_arch():
+        """Return a string containing the architecture"""
+        return platform.machine()
+
+    # pylint: disable=invalid-name
+    def get_os(self):
+        """Return a string containing the release which we can use to compare in the script"""
+        os_releases = (
+            "Raspbian",
+            "Debian",
+            "Kano",
+            "Mate",
+            "PiTop",
+            "Ubuntu",
+            "Darwin",
+            "Kali",
+        )
+        release = None
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                if "Raspbian" in f.read():
+                    release = "Raspian"
+            if self.run_command("command -v apt-get", suppress_message=True):
+                with open("/etc/os-release") as f:
+                    release_file = f.read()
+                    for opsys in os_releases:
+                        if opsys in release_file:
+                            release = opsys
+        if os.path.isdir(os.path.expanduser("~/.kano-settings")) or os.path.isdir(
+            os.path.expanduser("~/.kanoprofile")
+        ):
+            release = "Kano"
+        if os.path.isdir(os.path.expanduser("~/.config/ubuntu-mate")):
+            release = "Mate"
+        if platform.system() == "Darwin":
+            release = "Darwin"
+        return release
+
+    def get_raspbian_version(self):
+        """Return a string containing the raspbian version"""
+        if self.get_os() != "Raspbian":
+            return None
+        raspbian_releases = ("buster", "stretch", "jessie", "wheezy")
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                release_file = f.read()
+                if "/sid" in release_file:
+                    return "unstable"
+                for raspbian in raspbian_releases:
+                    if raspbian in release_file:
+                        return raspbian
+        return None
+
+    # pylint: enable=invalid-name
+
+    @staticmethod
+    def is_raspberry_pi():
+        """
+        Use PlatformDetect to check if this is a Raspberry Pi
+        """
+        detector = adafruit_platformdetect.Detector()
+        return detector.board.any_raspberry_pi
+
+    @staticmethod
+    def get_board_model():
+        """
+        Use PlatformDetect to get the board model
+        """
+        detector = adafruit_platformdetect.Detector()
+        return detector.board.id
+
+    @staticmethod
+    def get_architecture():
+        """
+        Get the type of Processor
+        """
+        return platform.machine()
 
     @staticmethod
     def kernel_minimum(version):
