@@ -52,11 +52,7 @@ class Shell:
 
         for index, selection in enumerate(selections):
             options.append(
-                {
-                    "selector": str(index + 1),
-                    "prompt": selection,
-                    "return": index + 1,
-                }
+                {"selector": str(index + 1), "prompt": selection, "return": index + 1,}
             )
         return prompt.options(message, options)
 

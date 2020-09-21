@@ -34,10 +34,7 @@ setup(
     # Author details
     author="Adafruit Industries",
     author_email="circuitpython@adafruit.com",
-    install_requires=[
-        "clint",
-        "Adafruit-PlatformDetect",
-    ],
+    install_requires=["clint", "Adafruit-PlatformDetect",],
     # Choose your license
     license="MIT",
     # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
