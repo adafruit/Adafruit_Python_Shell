@@ -26,7 +26,9 @@ import os
 import shutil
 import subprocess
 import platform
-from re import match, I
+import fileinput
+import re
+from datetime import datetime
 from clint.textui import colored, prompt
 import adafruit_platformdetect
 
@@ -42,6 +44,7 @@ class Shell:
 
     def __init__(self):
         self._group = None
+        self._dirstack = []
 
     @staticmethod
     def select_n(message, selections):
@@ -80,10 +83,19 @@ class Shell:
 
     def info(self, message):
         """
-        Display some inforrmation
+        Display a message with the group in green
         """
         if self._group is not None:
             print(colored.green(self._group) + " " + message)
+        else:
+            print(message)
+
+    def warn(self, message):
+        """
+        Display a message with the group in yellow
+        """
+        if self._group is not None:
+            print(colored.yellow(self._group) + " " + message)
         else:
             print(message)
 
@@ -133,10 +145,10 @@ class Shell:
             if reply == "" and default is not None:
                 return default == "y"
 
-            if match("y(?:es)?", reply, I):
+            if re.match("y(?:es)?", reply, re.I):
                 return True
 
-            if match("n(?:o)?", reply, I):
+            if re.match("n(?:o)?", reply, re.I):
                 return False
 
     @staticmethod
@@ -164,9 +176,34 @@ class Shell:
         """
         Change directory
         """
-        if directory[0] != "/" and directory[0] != ".":
-            directory = self.getcwd() + "/" + directory
-        return os.chdir(directory)
+        # if directory[0] != "/" and directory[0] != ".":
+        #    directory = self.getcwd() + "/" + directory
+        directory = self.path(directory)
+        if not self.exists(directory):
+            raise ValueError("Directory does not exist")
+        if not self.isdir(directory):
+            raise ValueError("Given location is not a directory")
+        os.chdir(directory)
+
+    def pushd(self, directory):
+        """
+        Change directory
+        """
+        # Add current dir to stack
+        self._dirstack.append(self.getcwd())
+        # change dir
+        self.chdir(directory)
+
+    def popd(self):
+        """
+        Change directory
+        """
+        # Add current dir to stack
+        if len(self._dirstack) > 0:
+            directory = self._dirstack.pop()
+            self.chdir(directory)
+        else:
+            raise RuntimeError("Directory stack empty")
 
     @staticmethod
     def path(file_path):
@@ -204,6 +241,81 @@ class Shell:
         return self.run_command(
             "grep {} {}".format(search_term, location), suppress_message=True
         )
+
+    @staticmethod
+    def date():
+        """
+        Return a string containing the current date and time
+        """
+        return datetime.now().ctime()
+
+    def reconfig(self, file, pattern, replacement):
+        """
+        Given a filename, a regex pattern to match and a replacement string,
+        perform replacement if found, else append replacement to end of file.
+        """
+        if not self.isdir(file):
+            if self.pattern_search(file, pattern):
+                # Pattern found; replace in file
+                self.pattern_replace(file, pattern, replacement)
+            else:
+                # Not found; append (silently)
+                self.write_text_file(file, replacement, append=True)
+
+    def pattern_search(self, location, pattern, multi_line=False):
+        """
+        Similar to grep, but uses pure python
+        multi_line will search the entire file as a large text glob,
+        but certain regex patterns such as ^ and $ will not work on a
+        line-by-line basis
+        returns True/False if found
+        """
+        location = self.path(location)
+        found = False
+
+        if self.exists(location) and not self.isdir(location):
+            if multi_line:
+                with open(location, "r+") as file:
+                    if re.search(pattern, file.read(), flags=re.DOTALL):
+                        found = True
+            else:
+                for line in fileinput.FileInput(location):
+                    if re.search(pattern, line):
+                        found = True
+
+        return found
+
+    def pattern_replace(self, location, pattern, replace="", multi_line=False):
+        """
+        Similar to sed, but uses pure python
+        multi_line will search the entire file as a large text glob,
+        but certain regex patterns such as ^ and $ will not work on a
+        line-by-line basis
+        """
+        location = self.path(location)
+        if self.pattern_search(location, pattern, multi_line):
+            if multi_line:
+                regex = re.compile(pattern, flags=re.DOTALL)
+                with open(location, "r+") as file:
+                    data = file.read()
+                    file.seek(0)
+                    file.write(regex.sub(replace, data))
+                    file.truncate()
+                    file.close()
+            else:
+                regex = re.compile(pattern)
+                for line in fileinput.FileInput(location, inplace=True):
+                    if re.search(pattern, line):
+                        print(regex.sub(replace, line), end="")
+                    else:
+                        print(line, end="")
+
+    def isdir(self, location):
+        """
+        Check if a location exists and is a directory
+        """
+        location = self.path(location)
+        return os.path.exists(location) and os.path.isdir(location)
 
     def exists(self, location):
         """
@@ -267,7 +379,7 @@ class Shell:
         Check if Platform.machine() (same as uname -m) returns an ARM platform that
         supports hardware floating point
         """
-        return bool(match("armv.l", platform.machine()))
+        return bool(re.match("armv.l", platform.machine()))
 
     @staticmethod
     def is_armv6():
@@ -375,6 +487,13 @@ class Shell:
         Check that we are running on at least the specified version
         """
         return platform.release() >= str(version)
+
+    @staticmethod
+    def release():
+        """
+        Return the latest kernel release version
+        """
+        return platform.release()
 
     def argument_exists(self, arg, prefix="-"):
         """
