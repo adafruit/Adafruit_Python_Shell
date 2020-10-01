@@ -59,26 +59,34 @@ class Shell:
             )
         return prompt.options(message, options)
 
-    def run_command(self, cmd, suppress_message=False):
+    def run_command(self, cmd, suppress_message=False, return_output=False):
         """
         Run a shell command and show the output as it runs
         """
         proc = subprocess.Popen(
             cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
+        full_output = ""
         while True:
             output = proc.stdout.readline()
             if len(output) == 0 and proc.poll() is not None:
                 break
-            if output and not suppress_message:
-                self.info(output.decode("utf-8").strip())
+            if output:
+                decoded_output = output.decode("utf-8").strip()
+                if not suppress_message:
+                    self.info(decoded_output)
+                full_output += decoded_output
         r = proc.poll()
         if r == 0:
+            if return_output:
+                return full_output
             return True
 
         err = proc.stderr.read()
         if not suppress_message:
             self.error(err.decode("utf-8"))
+        if return_output:
+            return full_output
         return False
 
     def info(self, message):
@@ -365,6 +373,11 @@ class Shell:
         service_file = open(self.path(path), mode)
         service_file.write(content)
         service_file.close()
+
+    @staticmethod
+    def is_python3():
+        "Check if we are running Python 3 or later"
+        return int(platform.python_version()[0]) >= 3
 
     @staticmethod
     def is_linux():
