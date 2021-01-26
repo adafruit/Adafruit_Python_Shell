@@ -339,6 +339,8 @@ class Shell:
         source = self.path(source)
         destination = self.path(destination)
         if os.path.exists(source):
+            if not os.path.isdir(source) and os.path.isdir(destination):
+                destination += os.sep + os.path.basename(source)
             shutil.move(source, destination)
 
     def copy(self, source, destination):
@@ -351,6 +353,8 @@ class Shell:
             if os.path.isdir(source):
                 shutil.copytree(source, destination)
             else:
+                if os.path.isdir(destination):
+                    destination += os.sep + os.path.basename(source)
                 shutil.copy(source, destination)
 
     def remove(self, location):
