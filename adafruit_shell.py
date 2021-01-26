@@ -72,7 +72,7 @@ class Shell:
             if len(output) == 0 and proc.poll() is not None:
                 break
             if output:
-                decoded_output = output.decode("utf-8").strip()
+                decoded_output = output.decode("utf-8", errors="ignore").strip()
                 if not suppress_message:
                     self.info(decoded_output)
                 full_output += decoded_output
@@ -84,7 +84,7 @@ class Shell:
 
         err = proc.stderr.read()
         if not suppress_message:
-            self.error(err.decode("utf-8"))
+            self.error(err.decode("utf-8", errors="ignore"))
         if return_output:
             return full_output
         return False
@@ -340,6 +340,18 @@ class Shell:
         destination = self.path(destination)
         if os.path.exists(source):
             shutil.move(source, destination)
+
+    def copy(self, source, destination):
+        """
+        Move a file or directory from source to destination
+        """
+        source = self.path(source)
+        destination = self.path(destination)
+        if os.path.exists(source):
+            if os.path.isdir(source):
+                shutil.copytree(source, destination)
+            else:
+                shutil.copyfile(source, destination)
 
     def remove(self, location):
         """
