@@ -351,7 +351,7 @@ class Shell:
             if os.path.isdir(source):
                 shutil.copytree(source, destination)
             else:
-                shutil.copyfile(source, destination)
+                shutil.copy(source, destination)
 
     def remove(self, location):
         """
