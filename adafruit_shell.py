@@ -63,30 +63,35 @@ class Shell:
         """
         Run a shell command and show the output as it runs
         """
-        proc = subprocess.Popen(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        full_output = ""
-        while True:
-            output = proc.stdout.readline()
-            if len(output) == 0 and proc.poll() is not None:
-                break
-            if output:
-                decoded_output = output.decode("utf-8", errors="ignore").strip()
-                if not suppress_message:
-                    self.info(decoded_output)
-                full_output += decoded_output
-        r = proc.poll()
-        if r == 0:
-            if return_output:
-                return full_output
-            return True
-
-        err = proc.stderr.read()
-        if not suppress_message:
-            self.error(err.decode("utf-8", errors="ignore"))
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        try:
+            proc = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            full_output = ""
+            while True:
+                output = proc.stdout.readline()
+                err = proc.stderr.read()
+                if len(err) and not suppress_message:
+                    self.error(err.decode("utf-8", errors="ignore"))
+                if len(output) == 0 and proc.poll() is not None:
+                    break
+                if output:
+                    decoded_output = output.decode("utf-8", errors="ignore").strip()
+                    if not suppress_message:
+                        self.info(decoded_output)
+                    full_output += decoded_output
+        except Exception as err:  # pylint: disable=broad-except
+            pass
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
         if return_output:
             return full_output
+        r = proc.poll()
+        if r == 0:
+            return True
         return False
 
     def info(self, message):
@@ -453,7 +458,7 @@ class Shell:
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release") as f:
                 if "Raspbian" in f.read():
-                    release = "Raspian"
+                    release = "Raspbian"
             if self.run_command("command -v apt-get", suppress_message=True):
                 with open("/etc/os-release") as f:
                     release_file = f.read()
