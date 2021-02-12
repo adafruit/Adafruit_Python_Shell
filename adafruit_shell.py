@@ -73,7 +73,7 @@ class Shell:
             while True:
                 output = proc.stdout.readline()
                 err = proc.stderr.read()
-                if len(err) and not suppress_message:
+                if err and not suppress_message:
                     self.error(err.decode("utf-8", errors="ignore"))
                 if len(output) == 0 and proc.poll() is not None:
                     break
