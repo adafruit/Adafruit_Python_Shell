@@ -490,6 +490,22 @@ class Shell:
                         return raspbian
         return None
 
+    def prompt_reboot(self):
+        """Prompt the user for a reboot"""
+        if not self.prompt("REBOOT NOW?", default="y"):
+            print("Exiting without reboot.")
+        else:
+            print("Reboot started...")
+            os.sync()
+            self.reboot()
+        self.exit()
+
+    def check_kernel_update_reboot_required(self):
+        """Checks if the pi needs to be rebooted since the last kernel update"""
+        if not self.exists("/lib/modules/{}".format(self.release())):
+            self.error("OS has not been rebooted since last kernel update.")
+            self.prompt_reboot()
+
     # pylint: enable=invalid-name
 
     @staticmethod
