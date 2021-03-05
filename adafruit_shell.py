@@ -504,7 +504,8 @@ class Shell:
         """Checks if the pi needs to be rebooted since the last kernel update"""
         if not self.exists("/lib/modules/{}".format(self.release())):
             self.error(
-                "OS has not been rebooted since last kernel update. Please reboot and re-run the script"
+                "OS has not been rebooted since last kernel update. "
+                "Please reboot and re-run the script."
             )
             self.prompt_reboot()
 
