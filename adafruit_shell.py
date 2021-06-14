@@ -55,7 +55,11 @@ class Shell:
 
         for index, selection in enumerate(selections):
             options.append(
-                {"selector": str(index + 1), "prompt": selection, "return": index + 1,}
+                {
+                    "selector": str(index + 1),
+                    "prompt": selection,
+                    "return": index + 1,
+                }
             )
         return prompt.options(message, options)
 
@@ -66,9 +70,11 @@ class Shell:
         original_stdout = sys.stdout
         original_stderr = sys.stderr
         try:
+            # pylint: disable=consider-using-with
             proc = subprocess.Popen(
                 cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
+            # pylint: enable=consider-using-with
             full_output = ""
             while True:
                 output = proc.stdout.readline()
@@ -391,9 +397,8 @@ class Shell:
             content = "\n" + content
         else:
             mode = "w"
-        service_file = open(self.path(path), mode)
-        service_file.write(content)
-        service_file.close()
+        with open(self.path(path), mode) as service_file:
+            service_file.write(content)
 
     @staticmethod
     def is_python3():
