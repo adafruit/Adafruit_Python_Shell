@@ -442,6 +442,13 @@ class Shell:
         return platform.machine() == "armv8l"
 
     @staticmethod
+    def is_arm64():
+        """
+        Check if Platform.machine() returns ARM 64
+        """
+        return platform.machine() == "aarch64"
+
+    @staticmethod
     def get_arch():
         """Return a string containing the architecture"""
         return platform.machine()
@@ -470,6 +477,8 @@ class Shell:
                     for opsys in os_releases:
                         if opsys in release_file:
                             release = opsys
+                if release == "Debian" and os.path.exists("/etc/rpi-issue"):
+                    release = "Raspbian"
         if os.path.isdir(os.path.expanduser("~/.kano-settings")) or os.path.isdir(
             os.path.expanduser("~/.kanoprofile")
         ):
