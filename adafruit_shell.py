@@ -88,7 +88,7 @@ class Shell:
                     if not suppress_message:
                         self.info(decoded_output)
                     full_output += decoded_output
-        except Exception as err:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except
             pass
         finally:
             sys.stdout = original_stdout
@@ -294,7 +294,7 @@ class Shell:
 
         if self.exists(location) and not self.isdir(location):
             if multi_line:
-                with open(location, "r+") as file:
+                with open(location, "r+", encoding="utf-8") as file:
                     if re.search(pattern, file.read(), flags=re.DOTALL):
                         found = True
             else:
@@ -315,7 +315,7 @@ class Shell:
         if self.pattern_search(location, pattern, multi_line):
             if multi_line:
                 regex = re.compile(pattern, flags=re.DOTALL)
-                with open(location, "r+") as file:
+                with open(location, "r+", encoding="utf-8") as file:
                     data = file.read()
                     file.seek(0)
                     file.write(regex.sub(replace, data))
@@ -397,7 +397,7 @@ class Shell:
             content = "\n" + content
         else:
             mode = "w"
-        with open(self.path(path), mode) as service_file:
+        with open(self.path(path), mode, encoding="utf-8") as service_file:
             service_file.write(content)
 
     @staticmethod
@@ -468,11 +468,11 @@ class Shell:
         )
         release = None
         if os.path.exists("/etc/os-release"):
-            with open("/etc/os-release") as f:
+            with open("/etc/os-release", encoding="utf-8") as f:
                 if "Raspbian" in f.read():
                     release = "Raspbian"
             if self.run_command("command -v apt-get", suppress_message=True):
-                with open("/etc/os-release") as f:
+                with open("/etc/os-release", encoding="utf-8") as f:
                     release_file = f.read()
                     for opsys in os_releases:
                         if opsys in release_file:
@@ -495,7 +495,7 @@ class Shell:
             return None
         raspbian_releases = ("buster", "stretch", "jessie", "wheezy")
         if os.path.exists("/etc/os-release"):
-            with open("/etc/os-release") as f:
+            with open("/etc/os-release", encoding="utf-8") as f:
                 release_file = f.read()
                 if "/sid" in release_file:
                     return "unstable"
