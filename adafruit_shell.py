@@ -125,7 +125,7 @@ class Shell:
         if message is None:
             self.error("Exiting due to error")
         else:
-            self.error("Exiting due to error: {}".format(message))
+            self.error(f"Exiting due to error: {message}")
         sys.exit(1)
 
     def error(self, message):
@@ -257,9 +257,7 @@ class Shell:
         Run the grep command and return the result
         """
         location = self.path(location)
-        return self.run_command(
-            "grep {} {}".format(search_term, location), suppress_message=True
-        )
+        return self.run_command(f"grep {search_term} {location}", suppress_message=True)
 
     @staticmethod
     def date():
@@ -385,7 +383,7 @@ class Shell:
         """
         if not self.is_root():
             print("Installer must be run as root.")
-            print("Try 'sudo python3 {}'".format(self.script()))
+            print(f"Try 'sudo python3 {self.script()}'")
             sys.exit(1)
 
     def write_text_file(self, path, content, append=True):
@@ -516,7 +514,7 @@ class Shell:
 
     def check_kernel_update_reboot_required(self):
         """Checks if the pi needs to be rebooted since the last kernel update"""
-        if not self.exists("/lib/modules/{}".format(self.release())):
+        if not self.exists(f"/lib/modules/{self.release()}"):
             self.error(
                 "OS has not been rebooted since last kernel update. "
                 "Please reboot and re-run the script."

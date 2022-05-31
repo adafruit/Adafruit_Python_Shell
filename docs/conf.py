@@ -21,13 +21,6 @@ extensions = [
     "sphinx.ext.todo",
 ]
 
-# TODO: Please Read!
-# Uncomment the below if you use native CircuitPython modules such as
-# digitalio, micropython and busio. List the modules you use. Without it, the
-# autodoc module docs will fail to generate with a warning.
-# autodoc_mock_imports = ["digitalio", "busio"]
-
-
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3.4", None),
     "CircuitPython": ("https://circuitpython.readthedocs.io/en/latest/", None),
@@ -60,7 +53,7 @@ release = "1.0"
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = "en"
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
