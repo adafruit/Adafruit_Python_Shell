@@ -257,9 +257,7 @@ class Shell:
         Run the grep command and return the result
         """
         location = self.path(location)
-        return self.run_command(
-            f"grep {search_term} {location}", suppress_message=True
-        )
+        return self.run_command(f"grep {search_term} {location}", suppress_message=True)
 
     @staticmethod
     def date():
