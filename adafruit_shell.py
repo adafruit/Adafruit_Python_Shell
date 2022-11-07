@@ -502,7 +502,7 @@ class Shell:
                         return raspbian
         return None
 
-    def prompt_reboot(self, default ="y", **kwargs):
+    def prompt_reboot(self, default="y", **kwargs):
         """Prompt the user for a reboot"""
         if not self.prompt("REBOOT NOW?", default=default, **kwargs):
             print("Exiting without reboot.")
