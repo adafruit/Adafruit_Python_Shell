@@ -145,13 +145,13 @@ class Shell:
             colorize = getattr(colored, color)
             print(colorize(message))
 
-    def prompt(self, message, *, default=None, force_arg=None):
+    def prompt(self, message, *, default=None, force_arg=None, force_arg_value=True):
         """
         A Yes/No prompt that accepts optional defaults
         Returns True for Yes and False for No
         """
         if force_arg is not None and self.argument_exists(force_arg):
-            return True
+            return force_arg_value
         if default is None:
             choicebox = "[y/n]"
         else:
