@@ -491,7 +491,7 @@ class Shell:
         """Return a string containing the raspbian version"""
         if self.get_os() != "Raspbian":
             return None
-        raspbian_releases = ("buster", "stretch", "jessie", "wheezy")
+        raspbian_releases = ("bullseye", "buster", "stretch", "jessie", "wheezy")
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release", encoding="utf-8") as f:
                 release_file = f.read()
@@ -502,9 +502,9 @@ class Shell:
                         return raspbian
         return None
 
-    def prompt_reboot(self):
+    def prompt_reboot(self, default ="y", **kwargs):
         """Prompt the user for a reboot"""
-        if not self.prompt("REBOOT NOW?", default="y"):
+        if not self.prompt("REBOOT NOW?", default=default, **kwargs):
             print("Exiting without reboot.")
         else:
             print("Reboot started...")
