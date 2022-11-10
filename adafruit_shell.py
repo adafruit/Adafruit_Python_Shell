@@ -69,6 +69,7 @@ class Shell:
         """
         Run a shell command and show the output as it runs
         """
+
         def read_stream(output):
             fd = output.fileno()
             fl = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -84,7 +85,7 @@ class Shell:
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True
+            universal_newlines=True,
         ) as proc:
             while proc.poll() is None:
                 err = read_stream(proc.stderr)
