@@ -70,12 +70,12 @@ class Shell:
         """
 
         def read_stream(output):
-            fd = output.fileno()
-            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            file_descriptor = output.fileno()
+            file_flags = fcntl.fcntl(file_descriptor, fcntl.F_GETFL)
+            fcntl.fcntl(file_descriptor, fcntl.F_SETFL, file_flags | os.O_NONBLOCK)
             try:
                 return output.read()
-            except:
+            except TypeError:
                 return ""
 
         full_output = ""
