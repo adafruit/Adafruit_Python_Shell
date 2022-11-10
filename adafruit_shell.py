@@ -69,7 +69,7 @@ class Shell:
         """
         Run a shell command and show the output as it runs
         """
-        def non_block_read(output):
+        def read_stream(output):
             fd = output.fileno()
             fl = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
@@ -87,10 +87,10 @@ class Shell:
             universal_newlines=True
         ) as proc:
             while proc.poll() is None:
-                err = non_block_read(proc.stderr)
+                err = read_stream(proc.stderr)
                 if err != "" and not suppress_message:
                     self.error(err.strip(), end="\n\r")
-                output = non_block_read(proc.stdout)
+                output = read_stream(proc.stdout)
                 if output != "" and not suppress_message:
                     self.info(output.strip(), end="\n\r")
                 full_output += output
