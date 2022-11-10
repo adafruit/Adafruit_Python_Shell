@@ -25,7 +25,6 @@ import sys
 import os
 import shutil
 import subprocess
-import shlex
 import fcntl
 import platform
 import fileinput
