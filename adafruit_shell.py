@@ -25,6 +25,7 @@ import sys
 import os
 import shutil
 import subprocess
+import fcntl
 import platform
 import fileinput
 import re
@@ -67,75 +68,77 @@ class Shell:
         """
         Run a shell command and show the output as it runs
         """
-        original_stdout = sys.stdout
-        original_stderr = sys.stderr
-        try:
-            # pylint: disable=consider-using-with
-            proc = subprocess.Popen(
-                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            # pylint: enable=consider-using-with
-            full_output = ""
-            while True:
-                output = proc.stdout.readline()
-                err = proc.stderr.read()
-                if err and not suppress_message:
-                    self.error(err.decode("utf-8", errors="ignore"))
-                if len(output) == 0 and proc.poll() is not None:
-                    break
-                if output:
-                    decoded_output = output.decode("utf-8", errors="ignore").strip()
-                    if not suppress_message:
-                        self.info(decoded_output)
-                    full_output += decoded_output
-        except Exception:  # pylint: disable=broad-except
-            pass
-        finally:
-            sys.stdout = original_stdout
-            sys.stderr = original_stderr
-        if return_output:
-            return full_output
-        r = proc.poll()
-        if r == 0:
-            return True
-        return False
 
-    def info(self, message):
+        def read_stream(output):
+            file_descriptor = output.fileno()
+            file_flags = fcntl.fcntl(file_descriptor, fcntl.F_GETFL)
+            fcntl.fcntl(file_descriptor, fcntl.F_SETFL, file_flags | os.O_NONBLOCK)
+            try:
+                return output.read()
+            except TypeError:
+                return ""
+
+        full_output = ""
+        with subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        ) as proc:
+            while proc.poll() is None:
+                err = read_stream(proc.stderr)
+                if err != "" and not suppress_message:
+                    self.error(err.strip(), end="\n\r")
+                output = read_stream(proc.stdout)
+                if output != "" and not suppress_message:
+                    self.info(output.strip(), end="\n\r")
+                full_output += output
+            return_code = proc.poll()
+            proc.stdout.close()
+            proc.stderr.close()
+            if return_output:
+                return full_output
+            if return_code:
+                return False
+            return True
+
+    def info(self, message, **kwargs):
         """
         Display a message with the group in green
         """
         if self._group is not None:
-            print(colored.green(self._group) + " " + message)
+            print(colored.green(self._group) + " " + message, **kwargs)
         else:
-            print(message)
+            print(message, **kwargs)
 
-    def warn(self, message):
+    def warn(self, message, **kwargs):
         """
         Display a message with the group in yellow
         """
         if self._group is not None:
-            print(colored.yellow(self._group) + " " + message)
+            print(colored.yellow(self._group) + " " + message, **kwargs)
         else:
-            print(message)
+            print(message, **kwargs)
 
-    def bail(self, message=None):
+    def bail(self, message=None, **kwargs):
         """
         Exit and display an error message if given
         """
         if message is None:
-            self.error("Exiting due to error")
+            self.error("Exiting due to error", **kwargs)
         else:
-            self.error(f"Exiting due to error: {message}")
+            self.error(f"Exiting due to error: {message}", **kwargs)
         sys.exit(1)
 
-    def error(self, message):
+    def error(self, message, **kwargs):
         """
-        Display some inforrmation
+        Display some information
         """
         if self._group is not None:
-            print(colored.red(self._group) + " " + message)
+            print(colored.red(self._group) + " " + message, **kwargs)
         else:
-            print(message)
+            print(message, **kwargs)
 
     @staticmethod
     def print_colored(message, color):
