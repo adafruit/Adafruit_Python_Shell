@@ -369,6 +369,14 @@ class Shell:
                     destination += os.sep + os.path.basename(source)
                 shutil.copy(source, destination)
 
+    def chmod(self, location, mode):
+        """
+        Change the permissions of a file or directory
+        """
+        location = self.path(location)
+        if os.path.exists(location):
+            os.chmod(location, mode)
+
     def remove(self, location):
         """
         Remove a file or directory if it exists
