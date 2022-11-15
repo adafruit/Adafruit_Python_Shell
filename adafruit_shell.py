@@ -381,6 +381,23 @@ class Shell:
         if os.path.exists(location):
             os.chmod(location, mode)
 
+    def chown(self, location, user, group=None, recursive=False):
+        """
+        Change the owner of a file or directory
+        """
+        if group is None:
+            group = user
+
+        location = self.path(location)
+        if recursive and os.path.isdir(location):
+            for root, dirs, files in os.walk(location):
+                for dir in dirs:
+                    shutil.chown(os.path.join(root, dir), user, group)
+                for file in files:
+                    shutil.chown(os.path.join(root, file), user, group)
+        else:
+            shutil.chown(location, user, group)
+
     def remove(self, location):
         """
         Remove a file or directory if it exists
