@@ -282,7 +282,7 @@ class Shell:
                 # Not found; append (silently)
                 self.write_text_file(file, replacement, append=True)
 
-    def pattern_search(self, location, pattern, multi_line=False):
+    def pattern_search(self, location, pattern, multi_line=False, return_match=False):
         """
         Similar to grep, but uses pure python
         multi_line will search the entire file as a large text glob,
@@ -296,13 +296,17 @@ class Shell:
         if self.exists(location) and not self.isdir(location):
             if multi_line:
                 with open(location, "r+", encoding="utf-8") as file:
-                    if re.search(pattern, file.read(), flags=re.DOTALL):
+                    match = re.search(pattern, file.read(), flags=re.DOTALL)
+                    if match:
                         found = True
             else:
                 for line in fileinput.FileInput(location):
-                    if re.search(pattern, line):
+                    match = re.search(pattern, line)
+                    if match:
                         found = True
-
+                        break
+        if return_match:
+            return match
         return found
 
     def pattern_replace(self, location, pattern, replace="", multi_line=False):
