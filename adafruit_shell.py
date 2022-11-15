@@ -391,8 +391,8 @@ class Shell:
         location = self.path(location)
         if recursive and os.path.isdir(location):
             for root, dirs, files in os.walk(location):
-                for dir in dirs:
-                    shutil.chown(os.path.join(root, dir), user, group)
+                for directory in dirs:
+                    shutil.chown(os.path.join(root, directory), user, group)
                 for file in files:
                     shutil.chown(os.path.join(root, file), user, group)
         else:
