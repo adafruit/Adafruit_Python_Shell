@@ -282,7 +282,7 @@ class Shell:
                 # Not found; append (silently)
                 self.write_text_file(file, replacement, append=True)
 
-    def pattern_search(self, location, pattern, multi_line=False):
+    def pattern_search(self, location, pattern, multi_line=False, return_match=False):
         """
         Similar to grep, but uses pure python
         multi_line will search the entire file as a large text glob,
@@ -296,13 +296,17 @@ class Shell:
         if self.exists(location) and not self.isdir(location):
             if multi_line:
                 with open(location, "r+", encoding="utf-8") as file:
-                    if re.search(pattern, file.read(), flags=re.DOTALL):
+                    match = re.search(pattern, file.read(), flags=re.DOTALL)
+                    if match:
                         found = True
             else:
                 for line in fileinput.FileInput(location):
-                    if re.search(pattern, line):
+                    match = re.search(pattern, line)
+                    if match:
                         found = True
-
+                        break
+        if return_match:
+            return match
         return found
 
     def pattern_replace(self, location, pattern, replace="", multi_line=False):
@@ -368,6 +372,37 @@ class Shell:
                 if os.path.isdir(destination):
                     destination += os.sep + os.path.basename(source)
                 shutil.copy(source, destination)
+
+    def chmod(self, location, mode):
+        """
+        Change the permissions of a file or directory
+        """
+        location = self.path(location)
+        if not 0 <= mode <= 0o777:
+            raise ValueError("Invalid mode value")
+        if os.path.exists(location):
+            os.chmod(location, mode)
+
+    def chown(self, location, user, group=None, recursive=False):
+        """
+        Change the owner of a file or directory
+        """
+        if group is None:
+            group = user
+
+        location = self.path(location)
+        if recursive and os.path.isdir(location):
+            for root, dirs, files in os.walk(location):
+                for directory in dirs:
+                    shutil.chown(
+                        os.path.join(root, directory),
+                        user,
+                        group,
+                    )
+                for file in files:
+                    shutil.chown(os.path.join(root, file), user, group)
+        else:
+            shutil.chown(location, user, group)
 
     def remove(self, location):
         """
@@ -472,6 +507,10 @@ class Shell:
             with open("/etc/os-release", encoding="utf-8") as f:
                 if "Raspbian" in f.read():
                     release = "Raspbian"
+            if self.exists("/etc/rpi-issue"):
+                with open("/etc/rpi-issue", encoding="utf-8") as f:
+                    if "Raspberry Pi" in f.read():
+                        release = "Raspbian"
             if self.run_command("command -v apt-get", suppress_message=True):
                 with open("/etc/os-release", encoding="utf-8") as f:
                     release_file = f.read()
@@ -525,6 +564,12 @@ class Shell:
             self.prompt_reboot()
 
     # pylint: enable=invalid-name
+
+    def is_raspberry_pi_os(self):
+        """
+        Check if we are running Raspberry Pi OS or Raspbian
+        """
+        return self.get_os() == "Raspbian"
 
     @staticmethod
     def is_raspberry_pi():
