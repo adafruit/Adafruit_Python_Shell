@@ -378,6 +378,8 @@ class Shell:
         Change the permissions of a file or directory
         """
         location = self.path(location)
+        if not 0 <= mode <= 0o777:
+            raise ValueError("Invalid mode value")
         if os.path.exists(location):
             os.chmod(location, mode)
 
@@ -392,7 +394,11 @@ class Shell:
         if recursive and os.path.isdir(location):
             for root, dirs, files in os.walk(location):
                 for directory in dirs:
-                    shutil.chown(os.path.join(root, directory), user, group)
+                    shutil.chown(
+                        os.path.join(root, directory),
+                        user,
+                        group,
+                    )
                 for file in files:
                     shutil.chown(os.path.join(root, file), user, group)
         else:
@@ -501,6 +507,10 @@ class Shell:
             with open("/etc/os-release", encoding="utf-8") as f:
                 if "Raspbian" in f.read():
                     release = "Raspbian"
+            if self.exists("/etc/rpi-issue"):
+                with open("/etc/rpi-issue", encoding="utf-8") as f:
+                    if "Raspberry Pi" in f.read():
+                        release = "Raspbian"
             if self.run_command("command -v apt-get", suppress_message=True):
                 with open("/etc/os-release", encoding="utf-8") as f:
                     release_file = f.read()
@@ -554,6 +564,12 @@ class Shell:
             self.prompt_reboot()
 
     # pylint: enable=invalid-name
+
+    def is_raspberry_pi_os(self):
+        """
+        Check if we are running Raspberry Pi OS or Raspbian
+        """
+        return self.get_os() == "Raspbian"
 
     @staticmethod
     def is_raspberry_pi():
