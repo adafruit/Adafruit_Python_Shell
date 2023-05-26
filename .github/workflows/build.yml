@@ -10,31 +10,27 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: Dump GitHub context
-      env:
-        GITHUB_CONTEXT: ${{ toJson(github) }}
-      run: echo "$GITHUB_CONTEXT"
     - name: Translate Repo Name For Build Tools filename_prefix
       id: repo-name
       run: |
-        echo ::set-output name=repo-name::$(
+        echo repo-name=$(
         echo ${{ github.repository }} |
         awk -F '\/' '{ print tolower($2) }' |
         tr '_' '-'
-        )
-    - name: Set up Python 3.7
-      uses: actions/setup-python@v1
+        ) >> $GITHUB_OUTPUT
+    - name: Set up Python 3.x
+      uses: actions/setup-python@v4
       with:
-        python-version: 3.7
+        python-version: '3.x'
     - name: Versions
       run: |
         python3 --version
     - name: Checkout Current Repo
-      uses: actions/checkout@v1
+      uses: actions/checkout@v3
       with:
         submodules: true
     - name: Checkout tools repo
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         repository: adafruit/actions-ci-circuitpython-libs
         path: actions-ci
@@ -44,26 +40,23 @@ jobs:
         source actions-ci/install.sh
     - name: Pip install pylint, Sphinx, pre-commit
       run: |
-        pip install --force-reinstall pylint Sphinx sphinx-rtd-theme pre-commit
+        pip install --force-reinstall Sphinx sphinx-rtd-theme pre-commit
     - name: Library version
       run: git describe --dirty --always --tags
     - name: Pre-commit hooks
       run: |
         pre-commit run --all-files
-    - name: PyLint
-      run: |
-        pylint $( find . -path './adafruit*.py' )
     - name: Build docs
       working-directory: docs
       run: sphinx-build -E -W -b html . _build/html
-    - name: Check For setup.py
+    - name: Check For pyproject.toml
       id: need-pypi
       run: |
-        echo ::set-output name=setup-py::$( find . -wholename './setup.py' )
+        echo pyproject-toml=$( find . -wholename './pyproject.toml' ) >> $GITHUB_OUTPUT
     - name: Build Python package
-      if: contains(steps.need-pypi.outputs.setup-py, 'setup.py')
+      if: contains(steps.need-pypi.outputs.pyproject-toml, 'pyproject.toml')
       run: |
-        pip install --upgrade setuptools wheel twine readme_renderer testresources
-        python setup.py sdist
-        python setup.py bdist_wheel --universal
+        pip install --upgrade build twine
+        find -type f -not -path "./.*" -not -path "./docs*" \( -name "*.py" -o -name "*.toml" \) -exec sed -i -e "s/0.0.0+auto.0/1.2.3/" {} +
+        python -m build
         twine check dist/*
