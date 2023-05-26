@@ -36,6 +36,7 @@ import adafruit_platformdetect
 __version__ = "0.0.0-auto.0"
 __repo__ = "https://github.com/adafruit/Adafruit_Python_Shell.git"
 
+
 # pylint: disable=too-many-public-methods
 class Shell:
     """
@@ -562,6 +563,22 @@ class Shell:
                 "Please reboot and re-run the script."
             )
             self.prompt_reboot()
+
+    def check_kernel_userspace_mismatch(self):
+        """
+        Check if the userspace is 64-bit and kernel is 32-bit
+        """
+        if self.is_arm64() and platform.architecture()[0] == "32bit":
+            print(
+                "Unable to compile driver because kernel space is 64-bit, but user space is 32-bit."
+            )
+            if self.is_raspberry_pi_os() and self.prompt(
+                "Add parameter to /boot/config.txt to use 32-bit kernel?"
+            ):
+                self.reconfig("/boot/config.txt", "^.*arm_64bit.*$", "arm_64bit=0")
+                self.prompt_reboot()
+            else:
+                self.bail("Unable to continue while mismatch is present.")
 
     # pylint: enable=invalid-name
 
