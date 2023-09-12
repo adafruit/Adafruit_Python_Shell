@@ -29,6 +29,7 @@ import fcntl
 import platform
 import fileinput
 import re
+import pwd
 from datetime import datetime
 from clint.textui import colored, prompt
 import adafruit_platformdetect
@@ -65,7 +66,9 @@ class Shell:
             )
         return prompt.options(message, options)
 
-    def run_command(self, cmd, suppress_message=False, return_output=False):
+    def run_command(
+        self, cmd, suppress_message=False, return_output=False, run_as_user=None
+    ):
         """
         Run a shell command and show the output as it runs
         """
@@ -79,13 +82,31 @@ class Shell:
             except TypeError:
                 return ""
 
+        # Allow running as a different user if we are root
+        if self.is_root() and run_as_user is not None:
+            pw_record = pwd.getpwnam(run_as_user)
+            env = os.environ.copy()
+            env["HOME"] = pw_record.pw_dir
+            env["LOGNAME"] = run_as_user
+            env["USER"] = pw_record.pw_name
+
+            def preexec():
+                os.setgid(pw_record.pw_gid)
+                os.setuid(pw_record.pw_uid)
+
+        else:
+            env = None
+            preexec = None
+
         full_output = ""
-        with subprocess.Popen(
+        with subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn
             cmd,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
+            env=env,
+            preexec_fn=preexec,
         ) as proc:
             while proc.poll() is None:
                 err = read_stream(proc.stderr)
