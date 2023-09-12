@@ -224,9 +224,9 @@ class Shell:
         #    directory = self.getcwd() + "/" + directory
         directory = self.path(directory)
         if not self.exists(directory):
-            raise ValueError("Directory does not exist")
+            raise ValueError(f"Directory '{directory}' does not exist")
         if not self.isdir(directory):
-            raise ValueError("Given location is not a directory")
+            raise ValueError(f"The given location '{directory}' is not a directory")
         os.chdir(directory)
 
     def pushd(self, directory):
