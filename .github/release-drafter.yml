@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2023 Melissa LeBlanc-Williams, written for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+change-template: "- $TITLE #$NUMBER by @$AUTHOR"
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  To use in CPython, `pip3 install Adafruit-Python-Shell`.
+
+  Read the [docs](https://circuitpython.readthedocs.io/projects/shell/en/latest/) for info on how to use it.
