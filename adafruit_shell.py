@@ -555,7 +555,14 @@ class Shell:
         """Return a string containing the raspbian version"""
         if self.get_os() != "Raspbian":
             return None
-        raspbian_releases = ("bookworm", "bullseye", "buster", "stretch", "jessie", "wheezy")
+        raspbian_releases = (
+            "bookworm",
+            "bullseye",
+            "buster",
+            "stretch",
+            "jessie",
+            "wheezy",
+        )
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release", encoding="utf-8") as f:
                 release_file = f.read()
