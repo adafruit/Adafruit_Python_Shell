@@ -37,6 +37,22 @@ import adafruit_platformdetect
 __version__ = "0.0.0+auto.0"
 __repo__ = "https://github.com/adafruit/Adafruit_Python_Shell.git"
 
+# This must be by order of release
+RASPI_VERSIONS = (
+    "wheezy",
+    "jessie",
+    "stretch",
+    "buster",
+    "bullseye",
+    "bookworm",
+    "trixie",
+)
+
+WINDOW_MANAGERS = {
+    "x11": "W1",
+    "wayland": "W2",
+    "labwc": "W3",
+}
 
 # pylint: disable=too-many-public-methods
 class Shell:
@@ -555,23 +571,28 @@ class Shell:
         """Return a string containing the raspbian version"""
         if self.get_os() != "Raspbian":
             return None
-        raspbian_releases = (
-            "bookworm",
-            "bullseye",
-            "buster",
-            "stretch",
-            "jessie",
-            "wheezy",
-        )
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release", encoding="utf-8") as f:
                 release_file = f.read()
                 if "/sid" in release_file:
                     return "unstable"
-                for raspbian in raspbian_releases:
+                for raspbian in RASPI_VERSIONS:
                     if raspbian in release_file:
                         return raspbian
         return None
+
+    def is_minumum_version(self, version):
+        """Check if the version is at least the specified version"""
+        # Check that version is a string
+        if not isinstance(version, str):
+            raise ValueError("Version must be a string")
+        # Check that version is in the list of valid versions
+        if version.lower() not in RASPI_VERSIONS:
+            raise ValueError("Invalid version")
+        # Check that the current version is at least the specified version
+        return RASPI_VERSIONS.index(self.get_raspbian_version()) >= RASPI_VERSIONS.index(
+            version.lower()
+        )
 
     def prompt_reboot(self, default="y", **kwargs):
         """Prompt the user for a reboot"""
@@ -592,21 +613,59 @@ class Shell:
             )
             self.prompt_reboot()
 
-    def check_kernel_userspace_mismatch(self):
+    def check_kernel_userspace_mismatch(self, attempt_fix=True, fix_with_x11=False):
         """
         Check if the userspace is 64-bit and kernel is 32-bit
         """
-        if self.is_arm64() and platform.architecture()[0] == "32bit":
+        if self.is_kernel_userspace_mismatched():
             print(
                 "Unable to compile driver because kernel space is 64-bit, but user space is 32-bit."
             )
-            if self.is_raspberry_pi_os() and self.prompt(
-                "Add parameter to /boot/config.txt to use 32-bit kernel?"
+            config = self.get_boot_config()
+            if self.is_raspberry_pi_os() and attempt_fix and config and self.prompt(
+                f"Add parameter to {config} to use 32-bit kernel?"
             ):
-                self.reconfig("/boot/config.txt", "^.*arm_64bit.*$", "arm_64bit=0")
+                # Set to use 32-bit kernel
+                self.reconfig(config, "^.*arm_64bit.*$", "arm_64bit=0")
+                if fix_with_x11:
+                    self.set_window_manager("x11")
                 self.prompt_reboot()
             else:
-                self.bail("Unable to continue while mismatch is present.")
+                raise RuntimeError("Unable to continue while mismatch is present.")
+
+    def set_window_manager(self, manager):
+        """
+        Call raspi-config to set a new window manager
+        """
+        if not self.is_minumum_version("bullseye"):
+            return
+
+        if manager.lower() not in WINDOW_MANAGERS.keys():
+            raise ValueError("Invalid window manager")
+
+        if manager.lower() == "labwc" and not self.exists("/usr/bin/labwc"):
+            raise RuntimeError("labwc is not installed")
+
+        print(f"Using {manager} as the window manager")
+        if not self.run_command("sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]):
+            raise RuntimeError("Unable to change window manager")
+
+    def get_boot_config(self):
+        """
+        Get the location of the boot config file
+        """
+        # check if /boot/firmware/config.txt exists
+        if self.exists("/boot/firmware/config.txt"):
+            return "/boot/firmware/config.txt"
+        elif self.exists("/boot/config.txt"):
+            return "/boot/config.txt"
+        return None
+
+    def is_kernel_userspace_mismatched(self):
+        """
+        If the userspace 64-bit and kernel is 32-bit?
+        """
+        return self.is_arm64() and platform.architecture()[0] == "32bit"
 
     # pylint: enable=invalid-name
 
