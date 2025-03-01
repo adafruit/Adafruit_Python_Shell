@@ -54,6 +54,7 @@ WINDOW_MANAGERS = {
     "labwc": "W3",
 }
 
+
 # pylint: disable=too-many-public-methods
 class Shell:
     """
@@ -590,9 +591,9 @@ class Shell:
         if version.lower() not in RASPI_VERSIONS:
             raise ValueError("Invalid version")
         # Check that the current version is at least the specified version
-        return RASPI_VERSIONS.index(self.get_raspbian_version()) >= RASPI_VERSIONS.index(
-            version.lower()
-        )
+        return RASPI_VERSIONS.index(
+            self.get_raspbian_version()
+        ) >= RASPI_VERSIONS.index(version.lower())
 
     def prompt_reboot(self, default="y", **kwargs):
         """Prompt the user for a reboot"""
@@ -622,8 +623,11 @@ class Shell:
                 "Unable to compile driver because kernel space is 64-bit, but user space is 32-bit."
             )
             config = self.get_boot_config()
-            if self.is_raspberry_pi_os() and attempt_fix and config and self.prompt(
-                f"Add parameter to {config} to use 32-bit kernel?"
+            if (
+                self.is_raspberry_pi_os()
+                and attempt_fix
+                and config
+                and self.prompt(f"Add parameter to {config} to use 32-bit kernel?")
             ):
                 # Set to use 32-bit kernel
                 self.reconfig(config, "^.*arm_64bit.*$", "arm_64bit=0")
@@ -640,14 +644,16 @@ class Shell:
         if not self.is_minumum_version("bullseye"):
             return
 
-        if manager.lower() not in WINDOW_MANAGERS.keys():
+        if manager.lower() not in WINDOW_MANAGERS:
             raise ValueError("Invalid window manager")
 
         if manager.lower() == "labwc" and not self.exists("/usr/bin/labwc"):
             raise RuntimeError("labwc is not installed")
 
         print(f"Using {manager} as the window manager")
-        if not self.run_command("sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]):
+        if not self.run_command(
+            "sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]
+        ):
             raise RuntimeError("Unable to change window manager")
 
     def get_boot_config(self):
@@ -657,7 +663,7 @@ class Shell:
         # check if /boot/firmware/config.txt exists
         if self.exists("/boot/firmware/config.txt"):
             return "/boot/firmware/config.txt"
-        elif self.exists("/boot/config.txt"):
+        if self.exists("/boot/config.txt"):
             return "/boot/config.txt"
         return None
 
