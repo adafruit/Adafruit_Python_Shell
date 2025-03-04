@@ -698,6 +698,14 @@ class Shell:
         return detector.board.id
 
     @staticmethod
+    def is_pi5_or_newer():
+        """
+        Use PlatformDetect to check if this is a Raspberry Pi 5 or newer
+        """
+        detector = adafruit_platformdetect.Detector()
+        return detector.board.any_raspberry_pi_5_board
+
+    @staticmethod
     def get_architecture():
         """
         Get the type of Processor
