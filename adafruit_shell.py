@@ -194,8 +194,8 @@ class Shell:
             template_content = template_file.read()
 
         # Render the template with the provided context
-        for key in kwargs.items():
-            template_content = template_content.replace(f"{{{key}}}", str(kwargs[key]))
+        for key, value in kwargs.items():
+            template_content = template_content.replace(f"{{{key}}}", str(value))
 
         return template_content
 
