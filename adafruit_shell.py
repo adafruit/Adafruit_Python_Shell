@@ -23,6 +23,7 @@ Implementation Notes
 # imports
 import sys
 import os
+import stat
 import shutil
 import subprocess
 import fcntl
@@ -52,6 +53,24 @@ WINDOW_MANAGERS = {
     "x11": "W1",
     "wayland": "W2",
     "labwc": "W3",
+}
+
+FILE_MODES = {
+    "+x": stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    "+r": stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
+    "+w": stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH,
+    "a+x": stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    "a+r": stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
+    "a+w": stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH,
+    "u+x": stat.S_IXUSR,
+    "u+r": stat.S_IRUSR,
+    "u+w": stat.S_IWUSR,
+    "g+x": stat.S_IXGRP,
+    "g+r": stat.S_IRGRP,
+    "g+w": stat.S_IWGRP,
+    "o+x": stat.S_IXOTH,
+    "o+r": stat.S_IROTH,
+    "o+w": stat.S_IWOTH,
 }
 
 
@@ -141,6 +160,44 @@ class Shell:
             if return_code:
                 return False
             return True
+
+    def write_templated_file(self, output_path, template, **kwargs):
+        """
+        Use a template file and render it with the given context and write it to the specified path.
+        The template file should contain placeholders in the format {key} which will be replaced
+        with the corresponding values from the kwargs dictionary.
+        """
+        # if path is an existing directory, the template filename will be used
+        output_path = self.path(output_path)
+        if os.path.isdir(output_path):
+            output_path = os.path.join(output_path, os.path.basename(template))
+
+        # Render the template with the provided context
+        rendered_content = self.load_template(template, **kwargs)
+
+        with open(output_path, "w") as output_file:
+            output_file.write(rendered_content)
+
+        return True
+
+    def load_template(self, template, **kwargs):
+        """
+        Load a template file and return its content with the placeholders replaced by the provided
+        context. The template file should contain placeholders in the format {key} which will be
+        replaced with the corresponding values from the kwargs dictionary.
+        """
+        if not os.path.exists(template):
+            self.error(f"Template file '{template}' does not exist")
+            return None
+
+        with open(template, "r") as template_file:
+            template_content = template_file.read()
+
+        # Render the template with the provided context
+        for key in kwargs.items():
+            template_content = template_content.replace(f"{{{key}}}", str(kwargs[key]))
+
+        return template_content
 
     def info(self, message, **kwargs):
         """
@@ -417,8 +474,13 @@ class Shell:
         Change the permissions of a file or directory
         """
         location = self.path(location)
+        # Convert a text mode to an integer mode
+        if isinstance(mode, str):
+            if mode not in FILE_MODES:
+                raise ValueError(f"Invalid mode string '{mode}'")
+            mode = FILE_MODES[mode]
         if not 0 <= mode <= 0o777:
-            raise ValueError("Invalid mode value")
+            raise ValueError(f"Invalid mode value '{mode}'")
         if os.path.exists(location):
             os.chmod(location, mode)
 
