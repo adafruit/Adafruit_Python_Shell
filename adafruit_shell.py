@@ -51,7 +51,7 @@ RASPI_VERSIONS = (
 
 WINDOW_MANAGERS = {
     "x11": "W1",
-    "wayland": "W2",
+    "wayfire": "W2",
     "labwc": "W3",
 }
 
@@ -174,6 +174,12 @@ class Shell:
 
         # Render the template with the provided context
         rendered_content = self.load_template(template, **kwargs)
+
+        if rendered_content is None:
+            self.error(
+                f"Failed to load template '{template}'. Unable to write file '{output_path}'."
+            )
+            return False
 
         with open(output_path, "w") as output_file:
             output_file.write(rendered_content)
@@ -717,6 +723,32 @@ class Shell:
             "sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]
         ):
             raise RuntimeError("Unable to change window manager")
+
+    def get_window_manager(self):
+        """
+        Get the current window manager
+        """
+        sessions = {"wayfire": "LXDE-pi-wayfire"}
+        # Check for Raspbian Desktop sessions
+        if self.exists("/usr/share/xsessions/rpd-x.desktop") or self.exists(
+            "/usr/share/wayland-sessions/rpd-labwc.desktop"
+        ):
+            sessions = {"x11": "rpd-x", "labwc": "rpd-labwc"}
+        else:
+            sessions = {
+                "x11": "LXDE-pi-x",
+                "labwc": "LXDE-pi-labwc",
+            }
+
+        matches = self.pattern_search(
+            "/etc/lightdm/lightdm.conf", "^(?!#.*?)user-session=(.+)", False, True
+        )
+        if matches:
+            session_match = matches.group(1)
+            for key, session in session_match.items():
+                if session == sessions[key]:
+                    return key
+        return None
 
     def get_boot_config(self):
         """
