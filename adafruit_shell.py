@@ -745,8 +745,8 @@ class Shell:
         )
         if matches:
             session_match = matches.group(1)
-            for key, session in session_match.items():
-                if session == sessions[key]:
+            for key, session in sessions.items():
+                if session_match == session:
                     return key
         return None
 
