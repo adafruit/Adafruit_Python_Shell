@@ -23,6 +23,7 @@ Implementation Notes
 # imports
 import sys
 import os
+import stat
 import shutil
 import subprocess
 import fcntl
@@ -50,8 +51,26 @@ RASPI_VERSIONS = (
 
 WINDOW_MANAGERS = {
     "x11": "W1",
-    "wayland": "W2",
+    "wayfire": "W2",
     "labwc": "W3",
+}
+
+FILE_MODES = {
+    "+x": stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    "+r": stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
+    "+w": stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH,
+    "a+x": stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    "a+r": stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
+    "a+w": stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH,
+    "u+x": stat.S_IXUSR,
+    "u+r": stat.S_IRUSR,
+    "u+w": stat.S_IWUSR,
+    "g+x": stat.S_IXGRP,
+    "g+r": stat.S_IRGRP,
+    "g+w": stat.S_IWGRP,
+    "o+x": stat.S_IXOTH,
+    "o+r": stat.S_IROTH,
+    "o+w": stat.S_IWOTH,
 }
 
 
@@ -141,6 +160,50 @@ class Shell:
             if return_code:
                 return False
             return True
+
+    def write_templated_file(self, output_path, template, **kwargs):
+        """
+        Use a template file and render it with the given context and write it to the specified path.
+        The template file should contain placeholders in the format {key} which will be replaced
+        with the corresponding values from the kwargs dictionary.
+        """
+        # if path is an existing directory, the template filename will be used
+        output_path = self.path(output_path)
+        if os.path.isdir(output_path):
+            output_path = os.path.join(output_path, os.path.basename(template))
+
+        # Render the template with the provided context
+        rendered_content = self.load_template(template, **kwargs)
+
+        if rendered_content is None:
+            self.error(
+                f"Failed to load template '{template}'. Unable to write file '{output_path}'."
+            )
+            return False
+
+        append = kwargs.get("append", False)
+        self.write_text_file(output_path, rendered_content, append=append)
+
+        return True
+
+    def load_template(self, template, **kwargs):
+        """
+        Load a template file and return its content with the placeholders replaced by the provided
+        context. The template file should contain placeholders in the format {key} which will be
+        replaced with the corresponding values from the kwargs dictionary.
+        """
+        if not os.path.exists(template):
+            self.error(f"Template file '{template}' does not exist")
+            return None
+
+        with open(template, "r") as template_file:
+            template_content = template_file.read()
+
+        # Render the template with the provided context
+        for key, value in kwargs.items():
+            template_content = template_content.replace(f"{{{key}}}", str(value))
+
+        return template_content
 
     def info(self, message, **kwargs):
         """
@@ -321,7 +384,10 @@ class Shell:
                 # Not found; append (silently)
                 self.write_text_file(file, replacement, append=True)
 
-    def pattern_search(self, location, pattern, multi_line=False, return_match=False):
+    # pylint: disable=too-many-arguments
+    def pattern_search(
+        self, location, pattern, multi_line=False, return_match=False, find_all=False
+    ):
         """
         Similar to grep, but uses pure python
         multi_line will search the entire file as a large text glob,
@@ -331,16 +397,17 @@ class Shell:
         """
         location = self.path(location)
         found = False
+        search_function = re.findall if find_all else re.search
 
         if self.exists(location) and not self.isdir(location):
             if multi_line:
                 with open(location, "r+", encoding="utf-8") as file:
-                    match = re.search(pattern, file.read(), flags=re.DOTALL)
+                    match = search_function(pattern, file.read(), flags=re.DOTALL)
                     if match:
                         found = True
             else:
                 for line in fileinput.FileInput(location):
-                    match = re.search(pattern, line)
+                    match = search_function(pattern, line)
                     if match:
                         found = True
                         break
@@ -417,8 +484,13 @@ class Shell:
         Change the permissions of a file or directory
         """
         location = self.path(location)
+        # Convert a text mode to an integer mode
+        if isinstance(mode, str):
+            if mode not in FILE_MODES:
+                raise ValueError(f"Invalid mode string '{mode}'")
+            mode = FILE_MODES[mode]
         if not 0 <= mode <= 0o777:
-            raise ValueError("Invalid mode value")
+            raise ValueError(f"Invalid mode value '{mode}'")
         if os.path.exists(location):
             os.chmod(location, mode)
 
@@ -474,6 +546,16 @@ class Shell:
             mode = "w"
         with open(self.path(path), mode, encoding="utf-8") as service_file:
             service_file.write(content)
+
+    def read_text_file(self, path):
+        """
+        Read the contents of a file at the specified path
+        """
+        path = self.path(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File '{path}' does not exist")
+        with open(path, "r", encoding="utf-8") as file:
+            return file.read()
 
     @staticmethod
     def is_python3():
@@ -655,6 +737,29 @@ class Shell:
             "sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]
         ):
             raise RuntimeError("Unable to change window manager")
+
+    def get_window_manager(self):
+        """
+        Get the current window manager
+        """
+        sessions = {"wayfire": "LXDE-pi-wayfire"}
+        # Check for Raspbian Desktop sessions
+        if self.exists("/usr/share/xsessions/rpd-x.desktop") or self.exists(
+            "/usr/share/wayland-sessions/rpd-labwc.desktop"
+        ):
+            sessions.update({"x11": "rpd-x", "labwc": "rpd-labwc"})
+        else:
+            sessions.update({"x11": "LXDE-pi-x", "labwc": "LXDE-pi-labwc"})
+
+        matches = self.pattern_search(
+            "/etc/lightdm/lightdm.conf", "^(?!#.*?)user-session=(.+)", False, True
+        )
+        if matches:
+            session_match = matches.group(1)
+            for key, session in sessions.items():
+                if session_match == session:
+                    return key
+        return None
 
     def get_boot_config(self):
         """
