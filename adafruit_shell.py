@@ -181,8 +181,8 @@ class Shell:
             )
             return False
 
-        with open(output_path, "w") as output_file:
-            output_file.write(rendered_content)
+        append = kwargs.get("append", False)
+        self.write_text_file(output_path, rendered_content, append=append)
 
         return True
 
