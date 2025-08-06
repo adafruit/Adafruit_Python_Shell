@@ -384,7 +384,10 @@ class Shell:
                 # Not found; append (silently)
                 self.write_text_file(file, replacement, append=True)
 
-    def pattern_search(self, location, pattern, multi_line=False, return_match=False):
+    # pylint: disable=too-many-arguments
+    def pattern_search(
+        self, location, pattern, multi_line=False, return_match=False, find_all=False
+    ):
         """
         Similar to grep, but uses pure python
         multi_line will search the entire file as a large text glob,
@@ -394,16 +397,17 @@ class Shell:
         """
         location = self.path(location)
         found = False
+        search_function = re.findall if find_all else re.search
 
         if self.exists(location) and not self.isdir(location):
             if multi_line:
                 with open(location, "r+", encoding="utf-8") as file:
-                    match = re.search(pattern, file.read(), flags=re.DOTALL)
+                    match = search_function(pattern, file.read(), flags=re.DOTALL)
                     if match:
                         found = True
             else:
                 for line in fileinput.FileInput(location):
-                    match = re.search(pattern, line)
+                    match = search_function(pattern, line)
                     if match:
                         found = True
                         break
