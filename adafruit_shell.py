@@ -733,12 +733,9 @@ class Shell:
         if self.exists("/usr/share/xsessions/rpd-x.desktop") or self.exists(
             "/usr/share/wayland-sessions/rpd-labwc.desktop"
         ):
-            sessions = {"x11": "rpd-x", "labwc": "rpd-labwc"}
+            sessions.update({"x11": "rpd-x", "labwc": "rpd-labwc"})
         else:
-            sessions = {
-                "x11": "LXDE-pi-x",
-                "labwc": "LXDE-pi-labwc",
-            }
+            sessions.update({"x11": "LXDE-pi-x", "labwc": "LXDE-pi-labwc"})
 
         matches = self.pattern_search(
             "/etc/lightdm/lightdm.conf", "^(?!#.*?)user-session=(.+)", False, True
