@@ -543,6 +543,16 @@ class Shell:
         with open(self.path(path), mode, encoding="utf-8") as service_file:
             service_file.write(content)
 
+    def read_text_file(self, path):
+        """
+        Read the contents of a file at the specified path
+        """
+        path = self.path(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File '{path}' does not exist")
+        with open(path, "r", encoding="utf-8") as file:
+            return file.read()
+
     @staticmethod
     def is_python3():
         "Check if we are running Python 3 or later"
