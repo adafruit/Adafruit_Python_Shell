@@ -664,7 +664,7 @@ class Shell:
                         return raspbian
         return None
 
-    def is_minumum_version(self, version):
+    def is_minimum_version(self, version):
         """Check if the version is at least the specified version"""
         # Check that version is a string
         if not isinstance(version, str):
@@ -723,7 +723,7 @@ class Shell:
         """
         Call raspi-config to set a new window manager
         """
-        if not self.is_minumum_version("bullseye"):
+        if not self.is_minimum_version("bullseye"):
             return
 
         if manager.lower() not in WINDOW_MANAGERS:
