@@ -115,7 +115,7 @@ class Shell:
             fcntl.fcntl(file_descriptor, fcntl.F_SETFL, file_flags | os.O_NONBLOCK)
             try:
                 return output.read()
-            except TypeError:
+            except (TypeError, BlockingIOError):
                 return ""
 
         # Allow running as a different user if we are root
