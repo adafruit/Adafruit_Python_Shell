@@ -115,7 +115,7 @@ class Shell:
             fcntl.fcntl(file_descriptor, fcntl.F_SETFL, file_flags | os.O_NONBLOCK)
             try:
                 return output.read()
-            except TypeError:
+            except (TypeError, BlockingIOError):
                 return ""
 
         # Allow running as a different user if we are root
@@ -640,11 +640,11 @@ class Shell:
                             release = opsys
                 if release == "Debian" and os.path.exists("/etc/rpi-issue"):
                     release = "Raspbian"
-        if os.path.isdir(os.path.expanduser("~/.kano-settings")) or os.path.isdir(
-            os.path.expanduser("~/.kanoprofile")
-        ):
+        if self.isdir("/etc/pi-top") or self.isdir("~/.config/pi-top"):
+            release = "PiTop"
+        if self.isdir("~/.kano-settings") or self.isdir("~/.kanoprofile"):
             release = "Kano"
-        if os.path.isdir(os.path.expanduser("~/.config/ubuntu-mate")):
+        if self.isdir("~/.config/ubuntu-mate"):
             release = "Mate"
         if platform.system() == "Darwin":
             release = "Darwin"
