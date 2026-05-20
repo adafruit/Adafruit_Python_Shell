@@ -114,9 +114,18 @@ class Shell:
             file_flags = fcntl.fcntl(file_descriptor, fcntl.F_GETFL)
             fcntl.fcntl(file_descriptor, fcntl.F_SETFL, file_flags | os.O_NONBLOCK)
             try:
-                return output.read()
+                data = output.read()
             except (TypeError, BlockingIOError):
                 return ""
+            if data is None:
+                return ""
+            # ``universal_newlines`` is intentionally not enabled on Popen so
+            # that carriage returns survive intact (Python's universal newlines
+            # mode otherwise rewrites every ``\r`` to ``\n``, which destroys
+            # in-place progress updates like the ones ``pip`` and ``apt`` emit).
+            # Decode here with ``errors="replace"`` so a stray non-UTF-8 byte
+            # doesn't kill the whole run.
+            return data.decode("utf-8", errors="replace")
 
         # Allow running as a different user if we are root
         if self.is_root() and run_as_user is not None:
@@ -135,23 +144,44 @@ class Shell:
             preexec = None
 
         full_output = ""
+        # Per-stream "are we at the start of a new line?" state so the group
+        # prefix is emitted exactly once per logical line, even when a chunk
+        # arrives split across reads or contains in-place updates ending in
+        # ``\r`` (e.g. download progress bars).
+        stream_state = {"stdout": True, "stderr": True}
         with subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn
             cmd,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             env=env,
             preexec_fn=preexec,
         ) as proc:
             while proc.poll() is None:
                 err = read_stream(proc.stderr)
                 if err != "" and not suppress_message:
-                    self.error(err.strip(), end="\n\r")
+                    stream_state["stderr"] = self._emit_stream_chunk(
+                        err, kind="error", at_line_start=stream_state["stderr"]
+                    )
                 output = read_stream(proc.stdout)
                 if output != "" and not suppress_message:
-                    self.info(output.strip(), end="\n\r")
+                    stream_state["stdout"] = self._emit_stream_chunk(
+                        output, kind="info", at_line_start=stream_state["stdout"]
+                    )
                 full_output += output
+            # Drain anything that arrived between the last read and the
+            # process exit so short-lived commands don't lose their output.
+            err = read_stream(proc.stderr)
+            if err != "" and not suppress_message:
+                stream_state["stderr"] = self._emit_stream_chunk(
+                    err, kind="error", at_line_start=stream_state["stderr"]
+                )
+            output = read_stream(proc.stdout)
+            if output != "" and not suppress_message:
+                stream_state["stdout"] = self._emit_stream_chunk(
+                    output, kind="info", at_line_start=stream_state["stdout"]
+                )
+            full_output += output
             return_code = proc.poll()
             proc.stdout.close()
             proc.stderr.close()
@@ -160,6 +190,53 @@ class Shell:
             if return_code:
                 return False
             return True
+
+    def _emit_stream_chunk(self, chunk, *, kind, at_line_start):
+        """
+        Write a chunk read from a subprocess stream to stdout, preserving the
+        process's own line terminators (including ``\r``-only progress updates)
+        and prepending the colored group prefix at the start of each logical
+        new line.
+
+        ``kind`` selects the color used for the group prefix
+        (``"info"`` -> green, ``"error"`` -> red). The ``end="\n\r"`` that the
+        old code hardcoded is *not* added here; whatever terminators the
+        underlying process emitted are passed through unchanged so that
+        carriage-return-based progress lines update in place instead of
+        scrolling.
+
+        Returns the updated ``at_line_start`` state for the next call.
+        """
+        if not chunk:
+            return at_line_start
+
+        # The original implementation funneled both info and error chunks
+        # through ``print()`` (i.e. stdout). Preserve that routing here -- only
+        # the prefix color differs between the two streams.
+        if kind == "error":
+            colorize = colored.red
+        else:
+            colorize = colored.green
+        stream = sys.stdout
+
+        prefix = colorize(self._group) + " " if self._group is not None else ""
+
+        # Split on '\n' but keep the separator attached to each segment so
+        # we can detect logical line boundaries. A bare '\r' inside a segment
+        # is *not* a new logical line -- it's an in-place update of the
+        # current line -- so we deliberately don't re-emit the prefix for it.
+        parts = chunk.split("\n")
+        for index, part in enumerate(parts):
+            is_last = index == len(parts) - 1
+            segment = part if is_last else part + "\n"
+            if not segment:
+                continue
+            if at_line_start and prefix:
+                stream.write(prefix)
+            stream.write(segment)
+            at_line_start = segment.endswith("\n")
+        stream.flush()
+        return at_line_start
 
     def write_templated_file(self, output_path, template, **kwargs):
         """
