@@ -21,19 +21,20 @@ Implementation Notes
 """
 
 # imports
-import sys
-import os
-import stat
-import shutil
-import subprocess
 import fcntl
-import platform
 import fileinput
-import re
+import os
+import platform
 import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
 from datetime import datetime
-from clint.textui import colored, prompt
+
 import adafruit_platformdetect
+from clint.textui import colored, prompt
 
 __version__ = "0.0.0+auto.0"
 __repo__ = "https://github.com/adafruit/Adafruit_Python_Shell.git"
@@ -102,9 +103,7 @@ class Shell:
             )
         return prompt.options(message, options)
 
-    def run_command(
-        self, cmd, suppress_message=False, return_output=False, run_as_user=None
-    ):
+    def run_command(self, cmd, suppress_message=False, return_output=False, run_as_user=None):
         """
         Run a shell command and show the output as it runs
         """
@@ -149,22 +148,22 @@ class Shell:
         # arrives split across reads or contains in-place updates ending in
         # ``\r`` (e.g. download progress bars).
         stream_state = {"stdout": True, "stderr": True}
-        with subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn
+        with subprocess.Popen(
             cmd,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
-            preexec_fn=preexec,
+            preexec_fn=preexec,  # noqa: PLW1509  # single-threaded use; see preexec docstring
         ) as proc:
             while proc.poll() is None:
                 err = read_stream(proc.stderr)
-                if err != "" and not suppress_message:
+                if err and not suppress_message:
                     stream_state["stderr"] = self._emit_stream_chunk(
                         err, kind="error", at_line_start=stream_state["stderr"]
                     )
                 output = read_stream(proc.stdout)
-                if output != "" and not suppress_message:
+                if output and not suppress_message:
                     stream_state["stdout"] = self._emit_stream_chunk(
                         output, kind="info", at_line_start=stream_state["stdout"]
                     )
@@ -172,12 +171,12 @@ class Shell:
             # Drain anything that arrived between the last read and the
             # process exit so short-lived commands don't lose their output.
             err = read_stream(proc.stderr)
-            if err != "" and not suppress_message:
+            if err and not suppress_message:
                 stream_state["stderr"] = self._emit_stream_chunk(
                     err, kind="error", at_line_start=stream_state["stderr"]
                 )
             output = read_stream(proc.stdout)
-            if output != "" and not suppress_message:
+            if output and not suppress_message:
                 stream_state["stdout"] = self._emit_stream_chunk(
                     output, kind="info", at_line_start=stream_state["stdout"]
                 )
@@ -273,7 +272,7 @@ class Shell:
             self.error(f"Template file '{template}' does not exist")
             return None
 
-        with open(template, "r") as template_file:
+        with open(template) as template_file:
             template_content = template_file.read()
 
         # Render the template with the provided context
@@ -337,13 +336,13 @@ class Shell:
         if default is None:
             choicebox = "[y/n]"
         else:
-            if default not in ["y", "n"]:
+            if default not in {"y", "n"}:
                 default = "y"
             choicebox = "[Y/n]" if default == "y" else "[y/N]"
         while True:
             reply = input(message + " " + choicebox + " ").strip()
 
-            if reply == "" and default is not None:
+            if not reply and default is not None:
                 return default == "y"
 
             if re.match("y(?:es)?", reply, re.I):
@@ -631,7 +630,7 @@ class Shell:
         path = self.path(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File '{path}' does not exist")
-        with open(path, "r", encoding="utf-8") as file:
+        with open(path, encoding="utf-8") as file:
             return file.read()
 
     @staticmethod
@@ -750,9 +749,9 @@ class Shell:
         if version.lower() not in RASPI_VERSIONS:
             raise ValueError("Invalid version")
         # Check that the current version is at least the specified version
-        return RASPI_VERSIONS.index(
-            self.get_raspbian_version()
-        ) >= RASPI_VERSIONS.index(version.lower())
+        return RASPI_VERSIONS.index(self.get_raspbian_version()) >= RASPI_VERSIONS.index(
+            version.lower()
+        )
 
     def prompt_reboot(self, default="y", **kwargs):
         """Prompt the user for a reboot"""
