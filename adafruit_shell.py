@@ -190,12 +190,45 @@ class Shell:
                 return False
             return True
 
+    # Match either ``\n`` (advance to next line) or one-or-more ``\r``
+    # (return cursor to column 0). The two are handled differently:
+    # ``\n`` starts a fresh logical line and gets a new group prefix,
+    # while ``\r`` is treated as in-place cursor motion for things like
+    # progress bars and does NOT re-emit the prefix -- subsequent redraw
+    # frames overwrite the previous frame on the same visual line, prefix
+    # included, which is how pip/apt progress UIs are designed to render.
+    # Runs of ``\r`` are coalesced so patterns like ``\r\r%5d\r`` aren't
+    # decomposed into separate redraw events.
+    _LINE_BOUNDARY_RE = re.compile(r"\n|\r+")
+
     def _emit_stream_chunk(self, chunk, *, kind, at_line_start):
         """
-        Write a chunk read from a subprocess stream to stdout, preserving the
-        process's own line terminators (including ``\r``-only progress updates)
-        and prepending the colored group prefix at the start of each logical
-        new line.
+        Write a chunk read from a subprocess stream to stdout, preserving
+        the process's own line terminators and prepending the colored
+        group prefix at the start of each *new* logical line.
+
+        Two kinds of boundary appear in the stream:
+
+        * ``\n`` (newline) -- starts a fresh logical line. The group prefix
+          is re-emitted before the next non-empty content so each line in a
+          log reads ``PITFT <message>``.
+        * ``\r`` (carriage return) or runs of ``\r`` -- returns the cursor
+          to column 0 in place. The prefix is NOT re-emitted on bare ``\r``.
+          On a real terminal this lets progress UIs (apt, pip, ...) animate
+          in place: the first frame of the line is written with a prefix,
+          subsequent ``\r``-redraw frames overwrite the visible characters
+          (prefix included) so the terminal shows the latest frame without
+          a stale prefix dangling at column 0. Any content that follows a
+          bare ``\r`` (e.g. apt's "erase the progress line, then start the
+          next status line") is still emitted without a prefix; the next
+          real ``\n`` is what re-arms prefix emission.
+
+        Leading horizontal whitespace right after a ``\n`` boundary is
+        treated as padding (apt occasionally leaves a stray space after a
+        ``\r``-clear sequence) and is suppressed before the prefix is
+        written, so output reads as e.g. ``PITFT Selecting previously
+        unselected package ...`` rather than ``PITFT  Selecting ...`` with
+        stray indentation.
 
         ``kind`` selects the color used for the group prefix
         (``"info"`` -> green, ``"error"`` -> red). The ``end="\n\r"`` that the
@@ -220,22 +253,71 @@ class Shell:
 
         prefix = colorize(self._group) + " " if self._group is not None else ""
 
-        # Split on '\n' but keep the separator attached to each segment so
-        # we can detect logical line boundaries. A bare '\r' inside a segment
-        # is *not* a new logical line -- it's an in-place update of the
-        # current line -- so we deliberately don't re-emit the prefix for it.
-        parts = chunk.split("\n")
-        for index, part in enumerate(parts):
-            is_last = index == len(parts) - 1
-            segment = part if is_last else part + "\n"
-            if not segment:
-                continue
-            if at_line_start and prefix:
-                stream.write(prefix)
-            stream.write(segment)
-            at_line_start = segment.endswith("\n")
+        # Walk the chunk segment-by-segment, where each segment is the run of
+        # bytes between two consecutive line boundaries (``\n`` or ``\r+``).
+        # The boundary itself is written after its preceding segment, and the
+        # next segment is treated as the start of a fresh logical line.
+        pos = 0
+        for match in self._LINE_BOUNDARY_RE.finditer(chunk):
+            body = chunk[pos : match.start()]
+            boundary = match.group(0)
+            self._write_logical_line(stream, prefix, body, at_line_start, terminator=boundary)
+            # Only ``\n`` resets the "start of logical line" state; bare
+            # ``\r`` keeps the current line's continuation flag so any
+            # following redraw content is written without a fresh prefix.
+            at_line_start = boundary[0] == "\n"
+            pos = match.end()
+        # Anything after the last boundary is an unterminated tail; emit it
+        # with no terminator. If we were at a line start and the tail was
+        # pure leading whitespace that we suppressed, stay at line-start so
+        # the prefix gets emitted with the real content on the next chunk.
+        tail = chunk[pos:]
+        if tail:
+            wrote = self._write_logical_line(stream, prefix, tail, at_line_start, terminator="")
+            if wrote:
+                at_line_start = False
+            # else: nothing was actually written (pure padding swallowed);
+            # leave ``at_line_start`` as-is so the next chunk still gets
+            # the prefix on its first real content.
         stream.flush()
         return at_line_start
+
+    @staticmethod
+    def _write_logical_line(stream, prefix, body, at_line_start, *, terminator):
+        """Write one segment (optionally prefixed, optionally terminated).
+
+        If ``at_line_start`` is true and a prefix is configured, the prefix
+        is written first, then ``body`` with any leading horizontal
+        whitespace stripped (so apt/pip padding doesn't push the real content
+        to the right). If ``body`` is empty after stripping, the prefix is
+        still suppressed so we don't leave a dangling ``PITFT `` on a
+        whitespace-only "clear" line.
+
+        Returns True if any body bytes were written (i.e. real content
+        landed on this logical line). The terminator is written regardless,
+        but does not count as body content -- callers use the return value
+        to decide whether to flip ``at_line_start``.
+        """
+        wrote_body = False
+        if at_line_start:
+            # Strip leading horizontal whitespace (spaces/tabs) that the
+            # source process used as padding. Don't strip ``\r`` / ``\n`` --
+            # the regex already consumed those.
+            stripped = body.lstrip(" \t")
+            if stripped:
+                if prefix:
+                    stream.write(prefix)
+                stream.write(stripped)
+                wrote_body = True
+            # else: pure-whitespace segment, swallow it; the terminator
+            # below (likely ``\r``) still gets written so the terminal
+            # still sees the cursor return.
+        elif body:
+            stream.write(body)
+            wrote_body = True
+        if terminator:
+            stream.write(terminator)
+        return wrote_body
 
     def write_templated_file(self, output_path, template, **kwargs):
         """
