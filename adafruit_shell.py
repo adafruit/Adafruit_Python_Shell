@@ -893,6 +893,30 @@ class Shell:
             else:
                 raise RuntimeError("Unable to continue while mismatch is present.")
 
+    def run_raspi_config(self, args, suppress_message=False, return_output=False, run_as_user=None):
+        """
+        Run a ``raspi-config nonint ...`` command, but only on Raspberry Pi OS.
+
+        ``raspi-config`` is only shipped (and only honored) on Raspberry Pi OS;
+        on other distros (DietPi, Ubuntu, etc.) the binary is absent and the
+        tweak would not apply anyway. On non-Pi-OS systems this method is a
+        no-op that returns ``True`` (or ``""`` when ``return_output=True``)
+        so existing call sites continue to work without producing misleading
+        "command not found" output.
+
+        ``args`` is the part after ``raspi-config nonint`` (e.g. ``"do_spi 0"``).
+        ``suppress_message``, ``return_output``, and ``run_as_user`` are
+        forwarded to :meth:`run_command`.
+        """
+        if not self.is_raspberry_pi_os():
+            return "" if return_output else True
+        return self.run_command(
+            "raspi-config nonint " + args,
+            suppress_message=suppress_message,
+            return_output=return_output,
+            run_as_user=run_as_user,
+        )
+
     def set_window_manager(self, manager):
         """
         Call raspi-config to set a new window manager
@@ -907,9 +931,7 @@ class Shell:
             raise RuntimeError("labwc is not installed")
 
         print(f"Using {manager} as the window manager")
-        if not self.run_command(
-            "sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]
-        ):
+        if not self.run_raspi_config("do_wayland " + WINDOW_MANAGERS[manager.lower()]):
             raise RuntimeError("Unable to change window manager")
 
     def get_window_manager(self):
