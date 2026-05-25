@@ -436,8 +436,24 @@ class Shell:
     @staticmethod
     def clear():
         """
-        Clear the screen
+        Clear the screen.
+
+        On an interactive TTY with a usable ``TERM``, defer to the
+        ``clear`` binary so the user gets a real terminal reset
+        (including scrollback flush where the emulator supports it).
+
+        When stdout isn't a TTY (output piped or redirected, CI, etc.)
+        or ``TERM`` is missing/unknown (``sudo`` with a stripped
+        environment, ``env -i``, ...), do nothing. Clearing has no
+        meaning when there's no screen to clear, and unconditionally
+        shelling out to ``clear`` in those cases prints ncurses'
+        ``'unknown': I need something more specific.`` to stderr.
         """
+        if not sys.stdout.isatty():
+            return
+        term = os.environ.get("TERM", "")
+        if not term or term in {"dumb", "unknown"}:
+            return
         os.system("clear")
 
     @staticmethod
