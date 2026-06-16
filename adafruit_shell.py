@@ -558,6 +558,14 @@ class Shell:
                 # Not found; append (silently)
                 self.write_text_file(file, replacement, append=True)
 
+    def append_if_missing(self, file, line):
+        """
+        Append an exact line to a file only if it is not already present.
+        Equivalent to the shell idiom: grep -qxF "line" file || echo line >> file
+        """
+        if not self.pattern_search(file, "^" + re.escape(line) + "$"):
+            self.write_text_file(file, line, append=True)
+
     # pylint: disable=too-many-arguments
     def pattern_search(
         self, location, pattern, multi_line=False, return_match=False, find_all=False
