@@ -21,19 +21,20 @@ Implementation Notes
 """
 
 # imports
-import sys
-import os
-import stat
-import shutil
-import subprocess
 import fcntl
-import platform
 import fileinput
-import re
+import os
+import platform
 import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
 from datetime import datetime
-from clint.textui import colored, prompt
+
 import adafruit_platformdetect
+from clint.textui import colored, prompt
 
 __version__ = "0.0.0+auto.0"
 __repo__ = "https://github.com/adafruit/Adafruit_Python_Shell.git"
@@ -102,9 +103,7 @@ class Shell:
             )
         return prompt.options(message, options)
 
-    def run_command(
-        self, cmd, suppress_message=False, return_output=False, run_as_user=None
-    ):
+    def run_command(self, cmd, suppress_message=False, return_output=False, run_as_user=None):
         """
         Run a shell command and show the output as it runs
         """
@@ -114,9 +113,18 @@ class Shell:
             file_flags = fcntl.fcntl(file_descriptor, fcntl.F_GETFL)
             fcntl.fcntl(file_descriptor, fcntl.F_SETFL, file_flags | os.O_NONBLOCK)
             try:
-                return output.read()
+                data = output.read()
             except (TypeError, BlockingIOError):
                 return ""
+            if data is None:
+                return ""
+            # ``universal_newlines`` is intentionally not enabled on Popen so
+            # that carriage returns survive intact (Python's universal newlines
+            # mode otherwise rewrites every ``\r`` to ``\n``, which destroys
+            # in-place progress updates like the ones ``pip`` and ``apt`` emit).
+            # Decode here with ``errors="replace"`` so a stray non-UTF-8 byte
+            # doesn't kill the whole run.
+            return data.decode("utf-8", errors="replace")
 
         # Allow running as a different user if we are root
         if self.is_root() and run_as_user is not None:
@@ -135,23 +143,44 @@ class Shell:
             preexec = None
 
         full_output = ""
-        with subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn
+        # Per-stream "are we at the start of a new line?" state so the group
+        # prefix is emitted exactly once per logical line, even when a chunk
+        # arrives split across reads or contains in-place updates ending in
+        # ``\r`` (e.g. download progress bars).
+        stream_state = {"stdout": True, "stderr": True}
+        with subprocess.Popen(
             cmd,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             env=env,
-            preexec_fn=preexec,
+            preexec_fn=preexec,  # noqa: PLW1509  # single-threaded use; see preexec docstring
         ) as proc:
             while proc.poll() is None:
                 err = read_stream(proc.stderr)
-                if err != "" and not suppress_message:
-                    self.error(err.strip(), end="\n\r")
+                if err and not suppress_message:
+                    stream_state["stderr"] = self._emit_stream_chunk(
+                        err, kind="error", at_line_start=stream_state["stderr"]
+                    )
                 output = read_stream(proc.stdout)
-                if output != "" and not suppress_message:
-                    self.info(output.strip(), end="\n\r")
+                if output and not suppress_message:
+                    stream_state["stdout"] = self._emit_stream_chunk(
+                        output, kind="info", at_line_start=stream_state["stdout"]
+                    )
                 full_output += output
+            # Drain anything that arrived between the last read and the
+            # process exit so short-lived commands don't lose their output.
+            err = read_stream(proc.stderr)
+            if err and not suppress_message:
+                stream_state["stderr"] = self._emit_stream_chunk(
+                    err, kind="error", at_line_start=stream_state["stderr"]
+                )
+            output = read_stream(proc.stdout)
+            if output and not suppress_message:
+                stream_state["stdout"] = self._emit_stream_chunk(
+                    output, kind="info", at_line_start=stream_state["stdout"]
+                )
+            full_output += output
             return_code = proc.poll()
             proc.stdout.close()
             proc.stderr.close()
@@ -160,6 +189,135 @@ class Shell:
             if return_code:
                 return False
             return True
+
+    # Match either ``\n`` (advance to next line) or one-or-more ``\r``
+    # (return cursor to column 0). The two are handled differently:
+    # ``\n`` starts a fresh logical line and gets a new group prefix,
+    # while ``\r`` is treated as in-place cursor motion for things like
+    # progress bars and does NOT re-emit the prefix -- subsequent redraw
+    # frames overwrite the previous frame on the same visual line, prefix
+    # included, which is how pip/apt progress UIs are designed to render.
+    # Runs of ``\r`` are coalesced so patterns like ``\r\r%5d\r`` aren't
+    # decomposed into separate redraw events.
+    _LINE_BOUNDARY_RE = re.compile(r"\n|\r+")
+
+    def _emit_stream_chunk(self, chunk, *, kind, at_line_start):
+        """
+        Write a chunk read from a subprocess stream to stdout, preserving
+        the process's own line terminators and prepending the colored
+        group prefix at the start of each *new* logical line.
+
+        Two kinds of boundary appear in the stream:
+
+        * ``\n`` (newline) -- starts a fresh logical line. The group prefix
+          is re-emitted before the next non-empty content so each line in a
+          log reads ``PITFT <message>``.
+        * ``\r`` (carriage return) or runs of ``\r`` -- returns the cursor
+          to column 0 in place. The prefix is NOT re-emitted on bare ``\r``.
+          On a real terminal this lets progress UIs (apt, pip, ...) animate
+          in place: the first frame of the line is written with a prefix,
+          subsequent ``\r``-redraw frames overwrite the visible characters
+          (prefix included) so the terminal shows the latest frame without
+          a stale prefix dangling at column 0. Any content that follows a
+          bare ``\r`` (e.g. apt's "erase the progress line, then start the
+          next status line") is still emitted without a prefix; the next
+          real ``\n`` is what re-arms prefix emission.
+
+        Leading horizontal whitespace right after a ``\n`` boundary is
+        treated as padding (apt occasionally leaves a stray space after a
+        ``\r``-clear sequence) and is suppressed before the prefix is
+        written, so output reads as e.g. ``PITFT Selecting previously
+        unselected package ...`` rather than ``PITFT  Selecting ...`` with
+        stray indentation.
+
+        ``kind`` selects the color used for the group prefix
+        (``"info"`` -> green, ``"error"`` -> red). The ``end="\n\r"`` that the
+        old code hardcoded is *not* added here; whatever terminators the
+        underlying process emitted are passed through unchanged so that
+        carriage-return-based progress lines update in place instead of
+        scrolling.
+
+        Returns the updated ``at_line_start`` state for the next call.
+        """
+        if not chunk:
+            return at_line_start
+
+        # The original implementation funneled both info and error chunks
+        # through ``print()`` (i.e. stdout). Preserve that routing here -- only
+        # the prefix color differs between the two streams.
+        if kind == "error":
+            colorize = colored.red
+        else:
+            colorize = colored.green
+        stream = sys.stdout
+
+        prefix = colorize(self._group) + " " if self._group is not None else ""
+
+        # Walk the chunk segment-by-segment, where each segment is the run of
+        # bytes between two consecutive line boundaries (``\n`` or ``\r+``).
+        # The boundary itself is written after its preceding segment, and the
+        # next segment is treated as the start of a fresh logical line.
+        pos = 0
+        for match in self._LINE_BOUNDARY_RE.finditer(chunk):
+            body = chunk[pos : match.start()]
+            boundary = match.group(0)
+            self._write_logical_line(stream, prefix, body, at_line_start, terminator=boundary)
+            # Only ``\n`` resets the "start of logical line" state; bare
+            # ``\r`` keeps the current line's continuation flag so any
+            # following redraw content is written without a fresh prefix.
+            at_line_start = boundary[0] == "\n"
+            pos = match.end()
+        # Anything after the last boundary is an unterminated tail; emit it
+        # with no terminator. If we were at a line start and the tail was
+        # pure leading whitespace that we suppressed, stay at line-start so
+        # the prefix gets emitted with the real content on the next chunk.
+        tail = chunk[pos:]
+        if tail:
+            wrote = self._write_logical_line(stream, prefix, tail, at_line_start, terminator="")
+            if wrote:
+                at_line_start = False
+            # else: nothing was actually written (pure padding swallowed);
+            # leave ``at_line_start`` as-is so the next chunk still gets
+            # the prefix on its first real content.
+        stream.flush()
+        return at_line_start
+
+    @staticmethod
+    def _write_logical_line(stream, prefix, body, at_line_start, *, terminator):
+        """Write one segment (optionally prefixed, optionally terminated).
+
+        If ``at_line_start`` is true and a prefix is configured, the prefix
+        is written first, then ``body`` with any leading horizontal
+        whitespace stripped (so apt/pip padding doesn't push the real content
+        to the right). If ``body`` is empty after stripping, the prefix is
+        still suppressed so we don't leave a dangling ``PITFT `` on a
+        whitespace-only "clear" line.
+
+        Returns True if any body bytes were written (i.e. real content
+        landed on this logical line). The terminator is written regardless,
+        but does not count as body content -- callers use the return value
+        to decide whether to flip ``at_line_start``.
+        """
+        wrote_body = False
+        if at_line_start:
+            # Strip leading horizontal whitespace (spaces/tabs) that the
+            # source process used as padding. Don't strip ``\r`` / ``\n`` --
+            # the regex already consumed those.
+            stripped = body.lstrip(" \t")
+            if stripped:
+                if prefix:
+                    stream.write(prefix)
+                stream.write(stripped)
+                wrote_body = True
+            # else: pure-whitespace segment, swallow it; the terminator
+            # below (likely ``\r``) still gets written so the terminal
+            # still sees the cursor return.
+        elif body:
+            stream.write(body)
+            wrote_body = True
+        if terminator:
+            stream.write(terminator)
+        return wrote_body
 
     def write_templated_file(self, output_path, template, **kwargs):
         """
@@ -196,7 +354,7 @@ class Shell:
             self.error(f"Template file '{template}' does not exist")
             return None
 
-        with open(template, "r") as template_file:
+        with open(template) as template_file:
             template_content = template_file.read()
 
         # Render the template with the provided context
@@ -260,13 +418,13 @@ class Shell:
         if default is None:
             choicebox = "[y/n]"
         else:
-            if default not in ["y", "n"]:
+            if default not in {"y", "n"}:
                 default = "y"
             choicebox = "[Y/n]" if default == "y" else "[y/N]"
         while True:
             reply = input(message + " " + choicebox + " ").strip()
 
-            if reply == "" and default is not None:
+            if not reply and default is not None:
                 return default == "y"
 
             if re.match("y(?:es)?", reply, re.I):
@@ -278,8 +436,24 @@ class Shell:
     @staticmethod
     def clear():
         """
-        Clear the screen
+        Clear the screen.
+
+        On an interactive TTY with a usable ``TERM``, defer to the
+        ``clear`` binary so the user gets a real terminal reset
+        (including scrollback flush where the emulator supports it).
+
+        When stdout isn't a TTY (output piped or redirected, CI, etc.)
+        or ``TERM`` is missing/unknown (``sudo`` with a stripped
+        environment, ``env -i``, ...), do nothing. Clearing has no
+        meaning when there's no screen to clear, and unconditionally
+        shelling out to ``clear`` in those cases prints ncurses'
+        ``'unknown': I need something more specific.`` to stderr.
         """
+        if not sys.stdout.isatty():
+            return
+        term = os.environ.get("TERM", "")
+        if not term or term in {"dumb", "unknown"}:
+            return
         os.system("clear")
 
     @staticmethod
@@ -383,6 +557,14 @@ class Shell:
             else:
                 # Not found; append (silently)
                 self.write_text_file(file, replacement, append=True)
+
+    def append_if_missing(self, file, line):
+        """
+        Append an exact line to a file only if it is not already present.
+        Equivalent to the shell idiom: grep -qxF "line" file || echo line >> file
+        """
+        if not self.pattern_search(file, "^" + re.escape(line) + "$"):
+            self.write_text_file(file, line, append=True)
 
     # pylint: disable=too-many-arguments
     def pattern_search(
@@ -554,7 +736,7 @@ class Shell:
         path = self.path(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File '{path}' does not exist")
-        with open(path, "r", encoding="utf-8") as file:
+        with open(path, encoding="utf-8") as file:
             return file.read()
 
     @staticmethod
@@ -673,9 +855,9 @@ class Shell:
         if version.lower() not in RASPI_VERSIONS:
             raise ValueError("Invalid version")
         # Check that the current version is at least the specified version
-        return RASPI_VERSIONS.index(
-            self.get_raspbian_version()
-        ) >= RASPI_VERSIONS.index(version.lower())
+        return RASPI_VERSIONS.index(self.get_raspbian_version()) >= RASPI_VERSIONS.index(
+            version.lower()
+        )
 
     def prompt_reboot(self, default="y", **kwargs):
         """Prompt the user for a reboot"""
@@ -719,6 +901,30 @@ class Shell:
             else:
                 raise RuntimeError("Unable to continue while mismatch is present.")
 
+    def run_raspi_config(self, args, suppress_message=False, return_output=False, run_as_user=None):
+        """
+        Run a ``raspi-config nonint ...`` command, but only on Raspberry Pi OS.
+
+        ``raspi-config`` is only shipped (and only honored) on Raspberry Pi OS;
+        on other distros (DietPi, Ubuntu, etc.) the binary is absent and the
+        tweak would not apply anyway. On non-Pi-OS systems this method is a
+        no-op that returns ``True`` (or ``""`` when ``return_output=True``)
+        so existing call sites continue to work without producing misleading
+        "command not found" output.
+
+        ``args`` is the part after ``raspi-config nonint`` (e.g. ``"do_spi 0"``).
+        ``suppress_message``, ``return_output``, and ``run_as_user`` are
+        forwarded to :meth:`run_command`.
+        """
+        if not self.is_raspberry_pi_os():
+            return "" if return_output else True
+        return self.run_command(
+            "raspi-config nonint " + args,
+            suppress_message=suppress_message,
+            return_output=return_output,
+            run_as_user=run_as_user,
+        )
+
     def set_window_manager(self, manager):
         """
         Call raspi-config to set a new window manager
@@ -733,9 +939,7 @@ class Shell:
             raise RuntimeError("labwc is not installed")
 
         print(f"Using {manager} as the window manager")
-        if not self.run_command(
-            "sudo raspi-config nonint do_wayland " + WINDOW_MANAGERS[manager.lower()]
-        ):
+        if not self.run_raspi_config("do_wayland " + WINDOW_MANAGERS[manager.lower()]):
             raise RuntimeError("Unable to change window manager")
 
     def get_window_manager(self):
